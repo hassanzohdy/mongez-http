@@ -1,0 +1,39 @@
+{
+    "name": "@mongez/http",
+    "version": "1.0.14",
+    "description": "Powerful yet simple package for handling ajax requests",
+    "main": "src/index.ts",
+    "dependencies": {
+        "@mongez/events": "^1.0.x",
+        "@mongez/reinforcements": "^1.0.x",
+        "@mongez/supportive-is": "^1.0.x",
+        "axios": "^0.24.0"
+    },
+    "scripts": {
+        "test": "jest tests --coverage"
+    },
+    "devDependencies": {
+        "@types/jest": "^27.0.3",
+        "jest": "^27.4.5",
+        "jest-esm-jsx-transform": "^1.0.0",
+        "ts-jest": "^27.1.2",
+        "typescript": "^4.5.2"
+    },
+    "keywords": [
+        "ajax",
+        "http",
+        "fetch",
+        "axios",
+        "request",
+        "browser"
+    ],
+    "author": "hassanzohdy",
+    "license": "MIT",
+    "jest": {
+        "verbose": true,
+        "transform": {
+            "\\.js$": "jest-esm-jsx-transform",
+            "^.+\\.tsx?$": "ts-jest"
+        }
+    }
+}
