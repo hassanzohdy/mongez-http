@@ -24,6 +24,7 @@ Axios is an awesome library, and provides you with great features, however, ther
     - [Patching Record](#patching-record)
     - [Publishing records](#publishing-records)
     - [Deleting Record](#deleting-record)
+    - [Creating Custom methods](#creating-custom-methods)
     - [Using Axios Config in Restful Classes](#using-axios-config-in-restful-classes)
   - [Aborting Requests](#aborting-requests)
   - [Acceptable Http Data](#acceptable-http-data)
@@ -304,6 +305,35 @@ usersService.delete(id).then(response => {
     // user resource is patched successfully.
 });
 ```
+
+### Creating Custom methods
+
+In some cases we may need to create custom methods that can be used later in our project.
+
+```ts
+// src/services/users-service.ts
+import { RestfulEndpoint } from '@mongez/http';
+
+class UsersService extends RestfulEndpoint {
+    /**
+     * {@inheritDoc}
+     */ 
+    public route: string = '/users';
+
+    /**
+     * Get active members only
+     */
+    public listActive() {
+        return this.endpoint.get(this.path('/active'));
+    } 
+}
+
+const usersService: UsersService = new UsersService();
+
+export default usersService;
+```
+
+In the previous example, we created a new method `listActive` which calls endpoint instance `this.endpoint` and pass to it a `path` method, this method concatenate the given argument with the basic route to generate another route, in the previous example the final route will be `/users/active`.
 
 ### Using Axios Config in Restful Classes
 
@@ -661,3 +691,4 @@ endpointEvents.onResponse((response: AxiosResponse): EventSubscription => {
 
 - Add Unit Tests
 - Handle Nodejs Http Requests.
+- Adding events on `RestfulEndpoint` i.e `onListing` `onCreating` and so on.
