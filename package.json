@@ -1,6 +1,6 @@
 {
     "name": "@mongez/http",
-    "version": "1.0.14",
+    "version": "1.0.15",
     "description": "Powerful yet simple package for handling ajax requests",
     "main": "src/index.ts",
     "dependencies": {
@@ -11,6 +11,10 @@
     },
     "scripts": {
         "test": "jest tests --coverage"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/hassanzohdy/mongez-http"
     },
     "devDependencies": {
         "@types/jest": "^27.0.3",
