@@ -22,7 +22,7 @@ Axios is an awesome library, and provides you with great features, however, ther
     - [Create new record](#create-new-record)
     - [Update Record](#update-record)
     - [Patching Record](#patching-record)
-  - [Publishing records](#publishing-records)
+    - [Publishing records](#publishing-records)
     - [Deleting Record](#deleting-record)
     - [Using Axios Config in Restful Classes](#using-axios-config-in-restful-classes)
   - [Aborting Requests](#aborting-requests)
@@ -253,7 +253,7 @@ usersService.patch(id, data).then(response => {
 });
 ```
 
-## Publishing records
+### Publishing records
 
 A smaller method that allow you to publish/un-publish records using `publish` method.
 
