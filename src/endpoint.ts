@@ -53,9 +53,9 @@ endpoint.interceptors.request.use((requestConfig) => {
   const currentConfigurations = getHttpConfigurations();
   // // concat the base url with the requested route
   requestConfig.url = concatRoute(
-    currentConfigurations.baseUrl,
-    requestConfig.url
-  );
+    currentConfigurations.baseUrl as string,
+    requestConfig.url as string
+  ).replace(/^\//, "");
 
   // A workaround for put requests to be sent as post request
   // this will allow us to upload images
