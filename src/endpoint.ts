@@ -1,11 +1,11 @@
 import endpointEvents from "./events";
 import Is from "@mongez/supportive-is";
-import axios, { AxiosInstance } from "axios";
-import { Obj } from "@mongez/reinforcements";
-import { getHttpConfig, getHttpConfigurations } from "./configurations";
+import { LastRequest } from "./types";
 import concatRoute from "@mongez/concat-route";
+import axios, { AxiosInstance, Canceler } from "axios";
+import { getHttpConfig, getHttpConfigurations } from "./configurations";
 
-let cancelToken;
+let cancelToken!: Canceler;
 
 let lastRequestInfo = {};
 
@@ -14,7 +14,7 @@ const endpoint: AxiosInstance = axios.create({
     function (data, headers) {
       const currentConfigurations = getHttpConfigurations();
       const transformPutRequest =
-        headers.isPutRequest && currentConfigurations.putToPost;
+        headers?.isPutRequest && currentConfigurations.putToPost;
 
       if (Is.formElement(data)) {
         data = new FormData(data);
@@ -27,21 +27,21 @@ const endpoint: AxiosInstance = axios.create({
       }
 
       if (currentConfigurations.formDataToJSON && Is.formData(data)) {
-        data = currentConfigurations.formDataToJSONSerializer(data);
+        data = currentConfigurations.formDataToJSONSerializer!(data);
       }
 
       if (Is.plainObject(data)) {
-        headers["Content-Type"] = "Application/json";
+        headers!["Content-Type"] = "Application/json";
 
         if (transformPutRequest) {
-          data[currentConfigurations.putMethodKey] = "PUT";
+          data[currentConfigurations.putMethodKey!] = "PUT";
         }
 
         data = JSON.stringify(data);
       }
 
       // delete the isPutRequest flag
-      delete headers.isPutRequest;
+      delete headers!.isPutRequest;
 
       return data;
     },
@@ -63,13 +63,13 @@ endpoint.interceptors.request.use((requestConfig) => {
     requestConfig.method === "put" &&
     currentConfigurations.putToPost === true
   ) {
-    requestConfig.headers["isPutRequest"] = true as any; // just a flag
+    requestConfig.headers!["isPutRequest"] = true as any; // just a flag
     requestConfig.method = "post";
   }
 
   const authHeader = currentConfigurations.setAuthorizationHeader;
   if (authHeader) {
-    requestConfig.headers.Authorization =
+    requestConfig.headers!.Authorization =
       typeof authHeader === "function" ? authHeader() : authHeader;
   }
 
@@ -111,12 +111,15 @@ endpoint.interceptors.response.use(
  *
  * @returns {object}
  */
-export const lastRequest = () => {
+export const lastRequest = (): LastRequest => {
+  // clone the cancel token
+  const cancel: Canceler = cancelToken.bind({});
+
   return {
     requestConfig: lastRequestInfo,
-    cancelToken: Obj.clone(cancelToken),
+    cancelToken: cancel,
     abort() {
-      this.cancelToken();
+      cancel();
     },
   };
 };

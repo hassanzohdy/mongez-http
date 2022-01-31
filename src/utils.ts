@@ -1,6 +1,7 @@
 export function serialize(formData: FormData) {
-  let object = {};
-  for (const input of formData.entries()) {
+  let object: any = {};
+  const data: any = formData.entries();
+  for (const input of data) {
     const [key, value] = input;
     if (!Reflect.has(object, key)) {
       object[key] = value;

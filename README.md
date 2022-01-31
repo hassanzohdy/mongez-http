@@ -36,6 +36,7 @@ Axios is an awesome library, and provides you with great features, however, ther
   - [Converting Put requests to Post requests](#converting-put-requests-to-post-requests)
   - [Http Configurations List](#http-configurations-list)
   - [HTTP Events](#http-events)
+  - [Change Log](#change-log)
   - [TODO](#todo)
 
 ## Installation
@@ -686,6 +687,12 @@ endpointEvents.onResponse((response: AxiosResponse): EventSubscription => {
     // do something
 });
 ```
+
+## Change Log
+
+- 1.0.21 (31 Jan 2022)
+  - Fixed lastRequest incorrect Cancel Token Clone
+  - Added `LastRequest` as return type to `lastRequest()` function
 
 ## TODO
 

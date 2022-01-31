@@ -146,7 +146,7 @@ export default class RestfulEndpoint implements RestfulService {
    * @param  {string | number} path
    * @returns {string}
    */
-  public path(path: string | number = null): string {
+  public path(path: string | number = ""): string {
     return this.route + (path ? "/" + String(path).replace(/^\//, "") : "");
   }
 }

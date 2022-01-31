@@ -1,5 +1,5 @@
 import { EventSubscription } from "@mongez/events";
-import { AxiosResponse, AxiosRequestConfig } from "axios";
+import { AxiosResponse, Canceler, AxiosRequestConfig } from "axios";
 
 export type HttpEvent = "sending" | "success" | "error" | "send";
 
@@ -152,4 +152,19 @@ export type EndpointEventsInterface = {
   beforeSending: (
     callback: (config: AxiosRequestConfig) => void
   ) => EventSubscription;
+};
+
+export type LastRequest = {
+  /**
+   * Last Request Configurations
+   */
+  requestConfig: AxiosRequestConfig;
+  /**
+   * Abort the request
+   */
+  abort: () => void;
+  /**
+   * Get cancel token
+   */
+  cancelToken: Canceler;
 };
