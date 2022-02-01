@@ -45,7 +45,7 @@ Axios is an awesome library, and provides you with great features, however, ther
 
 Or
 
-`npm i @mognez/http`
+`npm i @mongez/http`
 
 ## Initializing Configurations
 
@@ -345,7 +345,7 @@ All of the previous methods `list` `get` `create` `update` `delete` `patch` or `
 Another good feature of `@mongez/http` is that you can cancel or abort your last request easily using `lastRequest` function.
 
 ```ts
-import endpoint, { lastRequest } from '@mognez/http';
+import endpoint, { lastRequest } from '@mongez/http';
 
 endpoint.get('/user').then(response => {
     // it nevers go here
@@ -358,7 +358,7 @@ lastRequest().abort();
 > If you're making multiple requests, cache the last request function in a variable as calling it always returns last fired request.
 
 ```ts
-import endpoint, { lastRequest } from '@mognez/http';
+import endpoint, { lastRequest } from '@mongez/http';
 
 endpoint.get('/user').then(response => {
     // it nevers go here
@@ -396,7 +396,7 @@ In the next example, we'll see how to use an example of sending post request usi
 > If data is sent as plain object, then a request header `"Content-Type": "Application/json"` will be added to headers by default.
 
 ```ts
-import endpoint from '@mognez/http';
+import endpoint from '@mongez/http';
 
 const data: object = {
     email: 'hassanzohdy@gmail.com',
@@ -415,7 +415,7 @@ In the next example, we'll see how to use an example of sending post request usi
 ```tsx
 // Form.tsx
 import React from 'react'; 
-import endpoint from '@mognez/http';
+import endpoint from '@mongez/http';
 
 export default function MyForm() {
     const submitForm = e => {
@@ -443,7 +443,7 @@ In the next example, we'll see how to use an example of sending post request usi
 ```tsx
 // Form.tsx
 import React from 'react'; 
-import endpoint from '@mognez/http';
+import endpoint from '@mongez/http';
 
 export default function MyForm() {
     const submitForm = e => {
