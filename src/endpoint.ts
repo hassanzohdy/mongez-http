@@ -1,7 +1,7 @@
 import endpointEvents from "./events";
 import Is from "@mongez/supportive-is";
 import { LastRequest } from "./types";
-import concatRoute from "@mongez/concat-route";
+import { ltrim, rtrim } from "@mongez/reinforcements";
 import axios, { AxiosInstance, Canceler } from "axios";
 import { getHttpConfig, getHttpConfigurations } from "./configurations";
 
@@ -51,11 +51,12 @@ const endpoint: AxiosInstance = axios.create({
 
 endpoint.interceptors.request.use((requestConfig) => {
   const currentConfigurations = getHttpConfigurations();
+
   // // concat the base url with the requested route
-  requestConfig.url = concatRoute(
-    currentConfigurations.baseUrl as string,
-    requestConfig.url as string
-  ).replace(/^\//, "");
+  requestConfig.url =
+    rtrim(currentConfigurations.baseUrl as string, "/") +
+    "/" +
+    ltrim(requestConfig.url as string);
 
   // A workaround for put requests to be sent as post request
   // this will allow us to upload images

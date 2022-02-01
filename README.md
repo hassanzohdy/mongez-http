@@ -690,9 +690,11 @@ endpointEvents.onResponse((response: AxiosResponse): EventSubscription => {
 
 ## Change Log
 
+- 1.0.22 (1 Feb 2022)
+  - Fixed Incorrect base url concatenation with request config url.
 - 1.0.21 (31 Jan 2022)
-  - Fixed lastRequest incorrect Cancel Token Clone
-  - Added `LastRequest` as return type to `lastRequest()` function
+  - Fixed lastRequest incorrect Cancel Token Clone.
+  - Added `LastRequest` as return type to `lastRequest()` function.
 
 ## TODO
 
