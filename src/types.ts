@@ -137,15 +137,17 @@ export type EndpointEventsInterface = {
   /**
    * Triggered when response is returned with error response
    */
-  onError: (response: AxiosResponse) => EventSubscription;
+  onError: (callback: (response: AxiosResponse) => void) => EventSubscription;
   /**
    * Triggered when response is returned with success response
    */
-  onSuccess: (response: AxiosResponse) => EventSubscription;
+  onSuccess: (callback: (response: AxiosResponse) => void) => EventSubscription;
   /**
    * Triggered when response is returned wether it is success or error response
    */
-  onResponse: (response: AxiosResponse) => EventSubscription;
+  onResponse: (
+    callback: (response: AxiosResponse) => void
+  ) => EventSubscription;
   /**
    * Triggered before sending response
    */
