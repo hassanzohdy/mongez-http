@@ -1,10 +1,7 @@
-import endpoint from "./endpoint";
-export { default as endpointEvents } from "./events";
-export { default as RestfulEndpoint } from "./restful-endpoint";
-export { getHttpConfigurations, setHttpConfigurations } from "./configurations";
-export * from "./endpoint";
+import Endpoint from "./Endpoint";
 
-// types
-export * from "./types";
+export * from "./current-endpoint";
+export * from "./Endpoint";
+export * from "./RestfulEndpoint";
 
-export default endpoint;
+export default Endpoint;
