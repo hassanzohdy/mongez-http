@@ -1,6 +1,6 @@
 import Endpoint from "./Endpoint";
 
-export let currentEndpoint: Endpoint;
+let currentEndpoint: Endpoint;
 
 export function setCurrentEndpoint(endpoint: Endpoint) {
   currentEndpoint = endpoint;
