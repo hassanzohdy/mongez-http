@@ -9,3 +9,5 @@ export function setCurrentEndpoint(endpoint: Endpoint) {
 export function getCurrentEndpoint(): Endpoint {
   return currentEndpoint;
 }
+
+export const lastRequest = () => currentEndpoint.getLastRequest();
