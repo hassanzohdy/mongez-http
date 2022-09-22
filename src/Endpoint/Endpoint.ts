@@ -16,8 +16,11 @@ export default class Endpoint extends Axios {
   protected defaultConfigurations: EndpointConfigurations = {
     putToPost: false,
     putMethodKey: "_method",
+    data: null,
+    transformRequest: [],
     headers: {
       Accept: "application/json, text/plain, */*",
+      "Content-Type": "application/json;charset=UTF-8",
     },
   };
 
@@ -36,7 +39,10 @@ export default class Endpoint extends Axios {
    */
   public constructor(public configurations: EndpointConfigurations = {}) {
     super(configurations);
-
+    this.defaults = Obj.merge(
+      this.defaultConfigurations,
+      configurations
+    ) as any;
     this.configurations = Obj.merge(this.defaultConfigurations, configurations);
 
     this.boot();
@@ -123,13 +129,6 @@ export default class Endpoint extends Axios {
   }
 
   /**
-   * Get endpoint last request
-   */
-  public getLastRequest() {
-    return this.lastRequest;
-  }
-
-  /**
    * Add response interceptors
    */
   protected addResponseInterceptors() {
@@ -159,6 +158,13 @@ export default class Endpoint extends Axios {
         return Promise.reject(error);
       }
     );
+  }
+
+  /**
+   * Get endpoint last request
+   */
+  public getLastRequest() {
+    return this.lastRequest;
   }
 
   /**
