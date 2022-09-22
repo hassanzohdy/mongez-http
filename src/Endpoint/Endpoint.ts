@@ -1,7 +1,7 @@
 import events, { EventSubscription } from "@mongez/events";
 import { Obj, Random } from "@mongez/reinforcements";
 import Is from "@mongez/supportive-is";
-import { Axios, AxiosRequestConfig, AxiosResponse } from "axios";
+import axios, { Axios, AxiosRequestConfig, AxiosResponse } from "axios";
 import { EndpointConfigurations, EndpointEvent } from "./Endpoint.types";
 
 export default class Endpoint extends Axios {
@@ -16,12 +16,7 @@ export default class Endpoint extends Axios {
   protected defaultConfigurations: EndpointConfigurations = {
     putToPost: false,
     putMethodKey: "_method",
-    data: null,
-    transformRequest: [],
-    headers: {
-      Accept: "application/json, text/plain, */*",
-      "Content-Type": "application/json;charset=UTF-8",
-    },
+    ...(axios.defaults as any),
   };
 
   /**
@@ -134,24 +129,20 @@ export default class Endpoint extends Axios {
   protected addResponseInterceptors() {
     this.interceptors.response.use(
       (response) => {
-        try {
-          response.data = JSON.parse(response.data);
-        } catch {}
+        if (response.config.signal === this.lastRequest?.signal) {
+          this.lastRequest = undefined;
+        }
 
-        this.lastRequest = undefined;
         this.trigger("complete", response);
         this.trigger("success", response);
 
         return response;
       },
       (error) => {
-        if (error?.response?.data) {
-          try {
-            error.response.data = JSON.parse(error.response.data);
-          } catch {}
+        if (error.response?.config?.signal === this.lastRequest?.signal) {
+          this.lastRequest = undefined;
         }
 
-        this.lastRequest = undefined;
         this.trigger("complete", error.response);
         this.trigger("error", error.response);
 
