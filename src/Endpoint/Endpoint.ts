@@ -134,9 +134,9 @@ export default class Endpoint extends Axios {
   protected addResponseInterceptors() {
     this.interceptors.response.use(
       (response) => {
-        // try {
-        //   response.data = JSON.parse(response.data);
-        // } catch {}
+        try {
+          response.data = JSON.parse(response.data);
+        } catch {}
 
         this.lastRequest = undefined;
         this.trigger("complete", response);
@@ -145,11 +145,11 @@ export default class Endpoint extends Axios {
         return response;
       },
       (error) => {
-        // if (error?.response?.data) {
-        //   try {
-        //     error.response.data = JSON.parse(error.response.data);
-        //   } catch {}
-        // }
+        if (error?.response?.data) {
+          try {
+            error.response.data = JSON.parse(error.response.data);
+          } catch {}
+        }
 
         this.lastRequest = undefined;
         this.trigger("complete", error.response);
