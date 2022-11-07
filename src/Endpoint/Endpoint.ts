@@ -15,6 +15,10 @@ export default class Endpoint extends Axios {
    */
   protected defaultConfigurations: EndpointConfigurations = {
     putToPost: false,
+    cache: false,
+    cacheOptions: {
+      expiresAfter: 5 * 60, // 5 minutes
+    },
     putMethodKey: "_method",
     ...(axios.defaults as any),
   };
@@ -152,6 +156,58 @@ export default class Endpoint extends Axios {
   }
 
   /**
+   * {@inheritDoc}
+   */
+  public get<T = any, R = AxiosResponse<T>>(
+    url: string,
+    options?: EndpointConfigurations
+  ): Promise<R> {
+    return new Promise(async (resolve, reject) => {
+      if (
+        options?.cache ||
+        (this.configurations.cache && options?.cache !== false)
+      ) {
+        const cacheConfigurations = {
+          ...(this.configurations.cacheOptions || {}),
+          ...(options?.cacheOptions || {}),
+        };
+
+        const cacheDriver = cacheConfigurations.driver;
+
+        const cacheKey = this.getCacheKey(url);
+
+        const response = await cacheDriver?.get(cacheKey);
+
+        if (response) {
+          resolve(response as any);
+        } else {
+          super
+            .get(url, options)
+            .then((response) => {
+              cacheDriver?.set(
+                cacheKey,
+                {
+                  data: response.data,
+                  status: response.status,
+                  statusText: response.statusText,
+                  headers: response.headers,
+                },
+                cacheConfigurations.expiresAfter
+              );
+              resolve(response as any);
+            })
+            .catch((error) => reject(error));
+        }
+      } else {
+        super
+          .get(url, options)
+          .then(resolve as any)
+          .catch(reject);
+      }
+    });
+  }
+
+  /**
    * Get endpoint last request
    */
   public getLastRequest() {
@@ -203,5 +259,12 @@ export default class Endpoint extends Axios {
    */
   protected trigger(event: EndpointEvent, ...args: any[]) {
     return events.trigger(`${this.eventNamespace}.${event}`, ...args);
+  }
+
+  /**
+   * Get cache key form the given path
+   */
+  public getCacheKey(path: string) {
+    return `endpoint.${this.configurations.baseURL}.${path}`;
   }
 }

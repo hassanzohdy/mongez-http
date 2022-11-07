@@ -1,5 +1,5 @@
+import { CacheDriverInterface } from "@mongez/cache";
 import { AxiosRequestConfig } from "axios";
-
 export type EndpointEvent = "sending" | "success" | "error" | "complete";
 
 export type EndpointConfigurations = AxiosRequestConfig & {
@@ -9,6 +9,21 @@ export type EndpointConfigurations = AxiosRequestConfig & {
    * @default false
    */
   putToPost?: boolean;
+
+  /**
+   * Determine whether to enable cache in get requests
+   *
+   * @default false
+   */
+  cache?: boolean;
+
+  /**
+   * Cache options
+   */
+  cacheOptions?: {
+    driver: CacheDriverInterface;
+    expiresAfter?: number;
+  };
 
   /**
    * Defines the put key that will be added to post requests.

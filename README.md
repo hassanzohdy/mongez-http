@@ -25,7 +25,7 @@ Let's create a new Endpoint instance to handle our requests:
 import Endpoint from '@mongez/http';
 
 export const endpoint = new Endpoint({
-    baseUrl: 'https://jsonplaceholder.typicode.com',
+    baseURL: 'https://jsonplaceholder.typicode.com',
 });
 
 endpoint.post('/login', {
@@ -90,7 +90,7 @@ If your backend api requires `Authorization` header in every request, You may se
 import Endpoint from '@mongez/http';
 
 export const endpoint = new Endpoint({
-    baseUrl: 'https://api.sitename.com/v1',
+    baseURL: 'https://api.sitename.com/v1',
     setAuthorizationHeader: () => {
         if (user.isLoggedIn()) {
             return `Bearer ${user.getAccessToken()}`;
@@ -107,7 +107,7 @@ Or you may set it directly as string, for example if the api only accept `key` a
 import Endpoint from '@mongez/http';
 
 export const endpoint = new Endpoint({
-    baseUrl: 'https://api.sitename.com/v1',
+    baseURL: 'https://api.sitename.com/v1',
     setAuthorizationHeader: 'key some-api-key',
 });
 ```
@@ -150,7 +150,7 @@ If you're application uses only one endpoint, you can set the current endpoint i
 import Endpoint, { setCurrentEndpoint } from '@mongez/http';
 
 export const endpoint = new Endpoint({
-    baseUrl: 'https://jsonplaceholder.typicode.com',
+    baseURL: 'https://jsonplaceholder.typicode.com',
 });
 
 setCurrentEndpoint(endpoint);
@@ -550,12 +550,103 @@ const lastRequest = endpoint.getLastRequest();
 lastRequest.abort();
 ```
 
+## Caching
+
+> Added in 2.1.0
+
+You can now easily cache your `get` requests, to do so, you need to pass the `cache` option to the request method.
+
+```ts
+import endpoint from './endpoints';
+
+endpoint.get('/users', {
+    cache: true,
+}).then(response => {
+    // do something
+});
+```
+
+By default request will be cached for 5 minutes, you can change this by passing the `cacheTime` option.
+
+```ts
+import endpoint from './endpoints';
+
+endpoint.get('/users', {
+    cache: true,
+    cacheOptions: {
+        expiresAfter: 10 * 60 // 10 minutes
+    }
+}).then(response => {
+    // do something
+});
+```
+
+Here we defined the cache time to be 10 minutes.
+
+However, we need to define the cache driver that will contain the cached data, to do so, you need to define the `driver` property in cache options as well.
+
+You can easily use any [cache driver here](https://github.com/hassanzohdy/mongez-cache) or the cache manger directly.
+
+```ts
+import endpoint from './endpoints';
+import cache from '@mongez/cache';
+
+endpoint.get('/users', {
+    cache: true,
+    cacheOptions: {
+        driver: cache,
+        expiresAfter: 10 * 60 // 10 minutes
+    }
+}).then(response => {
+    // do something
+});
+```
+
+Using Run Time Driver will cache the data until the user refreshes the page regardless of the cache time, so you you may use it directly if you want to save it in the run time.
+
+```ts
+import endpoint from './endpoints';
+import { RunTimeDriver } from '@mongez/cache';
+
+endpoint.get('/users', {
+    cache: true,
+    cacheOptions: {
+        driver: new RunTimeDriver(),
+        expiresAfter: 10 * 60 // 10 minutes
+    }
+}).then(response => {
+    // do something
+});
+```
+
+You can also set the default cache options for all requests by passing the `cacheOptions` property to the endpoint instance and `cache` flag.
+
+```ts
+
+// src/endpoints.ts
+import Endpoint from '@mongez/http';
+import cache from '@mongez/cache';
+
+export const endpoint = new Endpoint({
+    baseURL: 'https://jsonplaceholder.typicode.com',
+    cache: true, // enable cache for all get requests
+    cacheOptions: {
+        expiresAfter: 10 * 60 // 10 minutes
+        driver: cache,
+    }
+});
+```
+
+The cache driver **MUST** implement the [CacheDriverInterface](https://github.com/hassanzohdy/mongez-cache#cache-driver-interface).
+
 ## Legacy Version 1 Documentation
 
 If you're still using Version 1, you can see its documentation in [Version 1 Documentation Section](./VERSION-1.md).
 
 ## Change Log
 
+- 2.1.0 (07 Nov 2022)
+  - Added caching support.
 - 2.0.0 (19 Sept 2022)
   - Released Version 2.
 - 1.0.22 (1 Feb 2022)
