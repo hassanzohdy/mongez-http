@@ -1,5 +1,5 @@
 import events, { EventSubscription } from "@mongez/events";
-import { Obj, Random } from "@mongez/reinforcements";
+import { merge, Random } from "@mongez/reinforcements";
 import Is from "@mongez/supportive-is";
 import axios, { Axios, AxiosRequestConfig, AxiosResponse } from "axios";
 import { EndpointConfigurations, EndpointEvent } from "./Endpoint.types";
@@ -38,11 +38,11 @@ export default class Endpoint extends Axios {
    */
   public constructor(public configurations: EndpointConfigurations = {}) {
     super(configurations);
-    this.defaults = Obj.merge(
+    this.defaults = merge(
       this.defaultConfigurations,
       configurations
     ) as any;
-    this.configurations = Obj.merge(this.defaultConfigurations, configurations);
+    this.configurations = merge(this.defaultConfigurations, configurations);
 
     this.boot();
   }
@@ -51,7 +51,7 @@ export default class Endpoint extends Axios {
    * Set endpoint configurations
    */
   public setConfigurations(configurations: EndpointConfigurations) {
-    this.configurations = Obj.merge(this.configurations, configurations);
+    this.configurations = merge(this.configurations, configurations);
 
     this.defaults = this.configurations as any;
   }
@@ -93,7 +93,7 @@ export default class Endpoint extends Axios {
         if (Is.formData(data)) {
           data.append(this.configurations.putMethodKey, "PUT");
         } else if (Is.plainObject(data) && this.configurations.putMethodKey) {
-          data = Obj.set(data, this.configurations.putMethodKey, "PUT");
+          data = set(data, this.configurations.putMethodKey, "PUT");
         }
       }
 
