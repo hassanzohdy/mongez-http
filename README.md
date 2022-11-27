@@ -8,6 +8,37 @@ Axios is an awesome library, and provides you with great features, however, ther
 
 > For demonstration purpose only, we may use React syntax for illustration when dealing with forms.
 
+## Table of contents
+
+- [Mongez Http](#mongez-http)
+  - [Why not using axios directly instead?](#why-not-using-axios-directly-instead)
+  - [Table of contents](#table-of-contents)
+  - [Installation](#installation)
+  - [Initializing Configurations](#initializing-configurations)
+  - [Basic Usage](#basic-usage)
+  - [Restful Endpoint](#restful-endpoint)
+    - [List records](#list-records)
+    - [Get single record](#get-single-record)
+    - [Create new record](#create-new-record)
+    - [Update Record](#update-record)
+    - [Patching Record](#patching-record)
+    - [Publishing records](#publishing-records)
+    - [Deleting Record](#deleting-record)
+    - [Creating Custom methods](#creating-custom-methods)
+    - [Using Axios Config in Restful Classes](#using-axios-config-in-restful-classes)
+  - [Aborting Requests](#aborting-requests)
+  - [Acceptable Http Data](#acceptable-http-data)
+    - [Object Data Format](#object-data-format)
+    - [HTML Form Element Format](#html-form-element-format)
+    - [Form Data Format](#form-data-format)
+  - [Form and FormData to Json Converter](#form-and-formdata-to-json-converter)
+  - [Setting Authorization Header](#setting-authorization-header)
+  - [Converting Put requests to Post requests](#converting-put-requests-to-post-requests)
+  - [Http Configurations List](#http-configurations-list)
+  - [HTTP Events](#http-events)
+  - [Change Log](#change-log)
+  - [TODO](#todo)
+
 ## Installation
 
 `yarn add @mongez/http`
@@ -16,103 +47,49 @@ Or
 
 `npm i @mongez/http`
 
-## Usage
+## Initializing Configurations
 
-Let's create a new Endpoint instance to handle our requests:
+Let's start with our first step, defining http configuration.
 
-```ts
-// src/endpoints.ts
-import Endpoint from '@mongez/http';
+```js
+import { setHttpConfigurations } from '@mongez/http';
 
-export const endpoint = new Endpoint({
-    baseURL: 'https://jsonplaceholder.typicode.com',
-});
-
-endpoint.post('/login', {
-    email: 'hassanzohdy@gmail.com',
-    password: '0000000',
-}).then(response => {
-    //
+setHttpConfigurations({
+    baseUrl: 'https://sitename.com/api',    
 });
 ```
 
-Now we can use this endpoint to make requests from any service files or even components.
+From this step we can now use our relative paths to our base url we set in our configurations.
 
-## Configurations
+We'll go later with the rest of our configurations, now let's start using it.
 
-The `Endpoint` class provides you with a set of methods to handle your requests, also it accepts [Axios Configurations](https://github.com/axios/axios#request-config) besides the configurations below:
+## Basic Usage
 
 ```ts
-import { AxiosRequestConfig } from "axios";
+// src/services/auth.ts
+import endpoint from '@mongez/http';
 
-export type EndpointConfigurations = AxiosRequestConfig & {
-  /**
-   * If set to true, all PUT requests will be transformed to POST requests with ${putMethodKey} = PUT value will be appended.
-   *
-   * @default false
-   */
-  putToPost?: boolean;
+export function login(data: object) {
+    return endpoint.post('/login', data);
+}
 
-  /**
-   * Defines the put key that will be added to post requests.
-   * Works only if `putToPost` is set to true and you send a `put` request
-   * The send value is `PUT`
-   *
-   * @default _method
-   */
-  putMethodKey?: string;
+// in some component base file
 
-  /**
-   * Set authorization header
-   *
-   * Useful when using Key and Bearer Tokens
-   */
-  setAuthorizationHeader?: string | (() => string);
+// some-component.ts
+
+const onSubmit = e => {
+    const data = {
+        email: 'hassanzohdy@gmail.com',
+        password: '123456789',
+    };
+
+    login(data).then(response => {
+        // response is done
+    }).catch(error => {
+        // some error in the response
+    });
 };
 ```
-
-In the above configurations, there are some interesting configurations that you may need to use such as `putToPost` and `setAuthorizationHeader`.
-
-## Converting Put requests to Post requests
-
-Why? because PUT requests won't allow sending files whereas post requests do it, so in some backend frameworks like [Laravel](https://laravel.com/) has a nice workaround that allows you to send a post request and it handles it as put request.
-
-If you're using Laravel or any app that does not allow uploading files using `PUT` request method, so you need to send a POST request with `_method=PUT` appended to the request body, and this is what `putToPost` does.
-
-You can also change the key of the appended data by changing the `putMethodKey` value, which defaults to `_method`.
-
-## Setting Authorization Header
-
-If your backend api requires `Authorization` header in every request, You may set Authorization header from configurations either as a string or as a callback,
-
-```ts
-
-import Endpoint from '@mongez/http';
-
-export const endpoint = new Endpoint({
-    baseURL: 'https://api.sitename.com/v1',
-    setAuthorizationHeader: () => {
-        if (user.isLoggedIn()) {
-            return `Bearer ${user.getAccessToken()}`;
-        }
-
-        return 'key some-api-key';
-    }
-});
-```
-
-Or you may set it directly as string, for example if the api only accept `key` authorization header:
-
-```ts
-import Endpoint from '@mongez/http';
-
-export const endpoint = new Endpoint({
-    baseURL: 'https://api.sitename.com/v1',
-    setAuthorizationHeader: 'key some-api-key',
-});
-```
-
-The `setAuthorizationHeader` configuration will be called before each request so it should have the proper value to be sent as it won't cache the initial value unless it is string.
 
 ## Restful Endpoint
 
@@ -120,7 +97,6 @@ In some situations, such as Admin Dashboard, there would be pages that implement
 
 ```ts
 // src/services/users-service.ts
-import { endpoint } from './endpoints';
 import { RestfulEndpoint } from '@mongez/http';
 
 class UsersService extends RestfulEndpoint {
@@ -128,10 +104,6 @@ class UsersService extends RestfulEndpoint {
      * {@inheritDoc}
      */ 
     public route: string = '/users';
-    /**
-     * Endpoint handler
-     */
-    public endpoint = endpoint;
 }
 
 const usersService: UsersService = new UsersService();
@@ -140,48 +112,6 @@ export default usersService;
 ```
 
 From this point we can now use our `usersService` object to `list` `get` `create` `update` `delete` `patch` or `publish`
-
-### Current Endpoint
-
-If you're application uses only one endpoint, you can set the current endpoint instance, this will allow all `RestfulEndpoint` instances to use the same endpoint instance unless you explicitly sets the `endpoint` property.
-
-```ts
-// endpoints.ts
-import Endpoint, { setCurrentEndpoint } from '@mongez/http';
-
-export const endpoint = new Endpoint({
-    baseURL: 'https://jsonplaceholder.typicode.com',
-});
-
-setCurrentEndpoint(endpoint);
-```
-
-Now we can use the `RestfulEndpoint` class without setting the `endpoint` property.
-
-```ts
-// src/services/users-service.ts
-import { RestfulEndpoint } from '@mongez/http';
-
-class UsersService extends RestfulEndpoint {
-    /**
-     * {@inheritDoc}
-     */ 
-    public route: string = '/users';
-}
-
-const usersService: UsersService = new UsersService();
-
-export default usersService;
-```
-
-Of course you can get the current endpoint instance using `getCurrentEndpoint` method.
-
-```ts
-import { getCurrentEndpoint } from '@mongez/http';
-
-const endpoint = getCurrentEndpoint();
-// endpoint is the same instance that we set in the above example
-```
 
 ### List records
 
@@ -406,9 +336,51 @@ export default usersService;
 
 In the previous example, we created a new method `listActive` which calls endpoint instance `this.endpoint` and pass to it a `path` method, this method concatenate the given argument with the basic route to generate another route, in the previous example the final route will be `/users/active`.
 
+### Using Axios Config in Restful Classes
+
+All of the previous methods `list` `get` `create` `update` `delete` `patch` or `publish` their last argument accepts Axios Configurations that can be [Request Config](https://www.npmjs.com/package/axios#request-config).
+
+## Aborting Requests
+
+Another good feature of `@mongez/http` is that you can cancel or abort your last request easily using `lastRequest` function.
+
+```ts
+import endpoint, { lastRequest } from '@mongez/http';
+
+endpoint.get('/user').then(response => {
+    // it nevers go here
+});
+
+// from some other point
+lastRequest().abort();
+```
+
+> If you're making multiple requests, cache the last request function in a variable as calling it always returns last fired request.
+
+```ts
+import endpoint, { lastRequest } from '@mongez/http';
+
+endpoint.get('/user').then(response => {
+    // it nevers go here
+});
+
+const usersRequest = lastRequest();
+
+endpoint.get('/posts').then(response => {
+    // it nevers go here
+});
+
+
+usersRequest.abort();
+
+const postsRequest = lastRequest();
+
+postsRequest.abort();
+```
+
 ## Acceptable Http Data
 
-For `POST` `PUT` requests, there are four acceptable formats of data:
+For `POST` `PUT` requests, there are three acceptable formats of data:
 
 1. `object`: which will send the request as json.
 2. `HTMLFormElement` which accepts an instance of [HTMLFormElement](https://developer.mozilla.org/en-US/docs/Web/API/HTMLFormElement) and request data will be sent as form data.
@@ -424,7 +396,7 @@ In the next example, we'll see how to use an example of sending post request usi
 > If data is sent as plain object, then a request header `"Content-Type": "Application/json"` will be added to headers by default.
 
 ```ts
-import endpoint from './endpoints';
+import endpoint from '@mongez/http';
 
 const data: object = {
     email: 'hassanzohdy@gmail.com',
@@ -443,7 +415,7 @@ In the next example, we'll see how to use an example of sending post request usi
 ```tsx
 // Form.tsx
 import React from 'react'; 
-import endpoint from './endpoints';
+import endpoint from '@mongez/http';
 
 export default function MyForm() {
     const submitForm = e => {
@@ -471,7 +443,7 @@ In the next example, we'll see how to use an example of sending post request usi
 ```tsx
 // Form.tsx
 import React from 'react'; 
-import endpoint from './endpoints';
+import endpoint from '@mongez/http';
 
 export default function MyForm() {
     const submitForm = e => {
@@ -494,163 +466,238 @@ export default function MyForm() {
 }
 ```
 
-## Endpoint Events
+## Form and FormData to Json Converter
 
-You can listen to events on the endpoint instance, the events are:
+Sometimes your api accepts only json data, but you may work with form elements or form data as well for storing form information, you may set an option to auto convert any form element or form data to json automatically in every request, just set `formDataToJSON` option to true in http configurations list.
 
-- `beforeSending`: will be fired before sending the request.
-- `onSuccess`: will be fired when the request is successful.
-- `onError`: will be fired when the request is failed.
-- `onComplete`: will be fired when the request is finished wether success or failed requests.
+```js
+import { setHttpConfigurations } from '@mongez/http';
+
+setHttpConfigurations({
+    baseUrl: 'https://sitename.com/api',    
+    formDataToJSON: true,
+});
+```
+
+You may also set your serializer method to convert the form data elements to objects.
 
 ```ts
+import { setHttpConfigurations } from '@mongez/http';
 
-import endpoint from './endpoints';
-import { AxiosRequestConfig, AxiosResponse } from "axios";
+setHttpConfigurations({
+    baseUrl: 'https://sitename.com/api',    
+    formDataToJSON: true,
+    formDataToJSONSerializer: (formData: FormData): object => {
+        // convert it into an object
+
+        return {};
+    },
+});
+```
+
+## Setting Authorization Header
+
+If your backend api requires `Authorization` header in every request, You may set Authorization header from configurations either as a string or as a callback,
+
+```js
+import { setHttpConfigurations } from '@mongez/http';
+
+setHttpConfigurations({
+    baseUrl: 'https://sitename.com/api',
+    setAuthorizationHeader: 'key some-api-key'
+});
+```
+
+You can set it as a callback so it gets a bearer token for example
+
+```js
+import user from './src/some-user';
+import { setHttpConfigurations } from '@mongez/http';
+
+setHttpConfigurations({
+    baseUrl: 'https://sitename.com/api',
+    setAuthorizationHeader: () => {
+        if (user.isLoggedIn()) {
+            return `Bearer ${user.accessToken()}`;
+        }
+
+        return `key some-api-key`;
+    }
+});
+```
+
+## Converting Put requests to Post requests
+
+Why? because PUT requests won't allow sending files whereas post requests do it, so in some backend frameworks like [Laravel](https://laravel.com/) has a nice workaround that allows you to send a post request and it handles it as put request.
+
+If your backend allows something like this, you may wish to set `putToPost` option to **true**.
+
+```js
+import { setHttpConfigurations } from '@mongez/http';
+
+setHttpConfigurations({
+    baseUrl: 'https://sitename.com/api',    
+    putToPost: true,
+});
+```
+
+This will convert any put request to post request with `_method` key added to the request payload with value `PUT`.
+
+```js
+import endpoint, { setHttpConfigurations } from '@mongez/http';
+
+setHttpConfigurations({
+    baseUrl: 'https://sitename.com/api',    
+    putToPost: true,
+});
+
+// The request will be:
+// POST /users/1
+// Request Payload: {email: some-email@gmail.com, _method: PUT}
+endpoint.put('/users/1', {
+    email: 'some-email@gmail.com',
+});
+```
+
+You may also override the `_method` key to other key if you would like in your http configurations.
+
+```js
+import { setHttpConfigurations } from '@mongez/http';
+
+setHttpConfigurations({
+    baseUrl: 'https://sitename.com/api',    
+    putToPost: true,
+    putMethodKey: '_other_put_key'
+});
+
+// The request will be:
+// POST /users/1
+// Request Payload: {email: some-email@gmail.com, _other_put_key: PUT}
+endpoint.put('/users/1', {
+    email: 'some-email@gmail.com',
+});
+```
+
+## Http Configurations List
+
+The following snippet defines all available configurations to the package.
+
+```ts
+type HttpConfigurations = {
+  /**
+   * Base Url Request
+   */
+  baseUrl?: string;
+
+  /**
+   * If set to true, all PUT requests will be transformed to POST requests with _method = PUT value will be appended.
+   *
+   * @default false
+   */
+  putToPost?: boolean;
+
+  /**
+   * Defines the put key that will be added to post requests.
+   * Works only if `putToPost` is set to true and you send a `put` request
+   * The send value is `PUT`
+   *
+   * @default _method
+   */
+  putMethodKey?: string;
+
+  /**
+   * Set other axios setup configurations
+   */
+  axiosConfig?: AxiosRequestConfig;
+
+  /**
+   * If set to true, any data that is sent as HTMLFormElement or FormData will be converted into object json format.
+   *
+   * @default false
+   */
+  formDataToJSON?: boolean;
+
+  /**
+   * A serializer function that accepts FormData element
+   * and returns an object to be transformed into JSON
+   */
+  formDataToJSONSerializer?: (formData: FormData) => object;
+
+  /**
+   * Set authorization header
+   *
+   * Useful when using Key and Bearer Tokens
+   */
+  setAuthorizationHeader?: string | (() => string);
+};
+```
+
+## HTTP Events
+
+`Mongez Http` is shipped with event driven approach so you may manipulate requests before sending it or after response is sent either on success, fail or on both.
+
+Before sending any request:
+
+```ts
+import { AxiosRequestConfig } from "axios";
+import { endpointEvents } from '@mongez/http';
 import { EventSubscription } from "@mongez/events";
 
 // This is triggered before sending any request
-endpoint.events.beforeSending((requestConfig:AxiosRequestConfig): EventSubscription => {
-    // do something
-});
-
-// This is triggered when the request is successful
-
-endpoint.events.onSuccess((response: AxiosResponse): EventSubscription => {
-    // do something
-});
-
-// This is triggered when the request is failed
-
-endpoint.events.onError((response: AxiosResponse): EventSubscription => {
-    // do something
-});
-
-// This is triggered when the request is finished wether success or failed requests
-endpoint.events.onComplete((response: AxiosResponse): EventSubscription => {
+endpointEvents.beforeSending((requestConfig:AxiosRequestConfig): EventSubscription => {
     // do something
 });
 ```
 
-The `onComplete` event will be triggered before `onSuccess` and `onError` events.
-
-## Aborting Requests
-
-You can abort a request by getting the last request instance using `getLastRequest` method which is an instance of [AbortController](https://github.com/axios/axios#abortcontroller).
+On success request:
 
 ```ts
-import endpoint from './endpoints';
+import { AxiosResponse } from "axios";
+import { endpointEvents } from '@mongez/http';
+import { EventSubscription } from "@mongez/events";
 
-endpoint.get('/users').then(response => {
-    // do something
-});
-
-const lastRequest = endpoint.getLastRequest();
-
-lastRequest.abort();
-```
-
-## Caching
-
-> Added in 2.1.0
-
-You can now easily cache your `get` requests, to do so, you need to pass the `cache` option to the request method.
-
-```ts
-import endpoint from './endpoints';
-
-endpoint.get('/users', {
-    cache: true,
-}).then(response => {
+// This is triggered on success request
+endpointEvents.onSuccess((response: AxiosResponse): EventSubscription => {
     // do something
 });
 ```
 
-By default request will be cached for 5 minutes, you can change this by passing the `cacheTime` option.
+On Failure request:
 
 ```ts
-import endpoint from './endpoints';
+import { AxiosResponse } from "axios";
+import { endpointEvents } from '@mongez/http';
+import { EventSubscription } from "@mongez/events";
 
-endpoint.get('/users', {
-    cache: true,
-    cacheOptions: {
-        expiresAfter: 10 * 60 // 10 minutes
-    }
-}).then(response => {
+// This is triggered on failure request
+endpointEvents.onError((response: AxiosResponse): EventSubscription => {
     // do something
 });
 ```
 
-Here we defined the cache time to be 10 minutes.
-
-However, we need to define the cache driver that will contain the cached data, to do so, you need to define the `driver` property in cache options as well.
-
-You can easily use any [cache driver here](https://github.com/hassanzohdy/mongez-cache) or the cache manger directly.
+On request response either success or failure:
 
 ```ts
-import endpoint from './endpoints';
-import cache from '@mongez/cache';
+import { AxiosResponse } from "axios";
+import { endpointEvents } from '@mongez/http';
+import { EventSubscription } from "@mongez/events";
 
-endpoint.get('/users', {
-    cache: true,
-    cacheOptions: {
-        driver: cache,
-        expiresAfter: 10 * 60 // 10 minutes
-    }
-}).then(response => {
+// This is triggered on response return either on success or on failure
+endpointEvents.onResponse((response: AxiosResponse): EventSubscription => {
     // do something
 });
 ```
-
-Using Run Time Driver will cache the data until the user refreshes the page regardless of the cache time, so you you may use it directly if you want to save it in the run time.
-
-```ts
-import endpoint from './endpoints';
-import { RunTimeDriver } from '@mongez/cache';
-
-endpoint.get('/users', {
-    cache: true,
-    cacheOptions: {
-        driver: new RunTimeDriver(),
-        expiresAfter: 10 * 60 // 10 minutes
-    }
-}).then(response => {
-    // do something
-});
-```
-
-You can also set the default cache options for all requests by passing the `cacheOptions` property to the endpoint instance and `cache` flag.
-
-```ts
-
-// src/endpoints.ts
-import Endpoint from '@mongez/http';
-import cache from '@mongez/cache';
-
-export const endpoint = new Endpoint({
-    baseURL: 'https://jsonplaceholder.typicode.com',
-    cache: true, // enable cache for all get requests
-    cacheOptions: {
-        expiresAfter: 10 * 60 // 10 minutes
-        driver: cache,
-    }
-});
-```
-
-The cache driver **MUST** implement the [CacheDriverInterface](https://github.com/hassanzohdy/mongez-cache#cache-driver-interface).
-
-## Legacy Version 1 Documentation
-
-If you're still using Version 1, you can see its documentation in [Version 1 Documentation Section](./VERSION-1.md).
 
 ## Change Log
 
-- 2.1.0 (07 Nov 2022)
-  - Added caching support.
-- 2.0.0 (19 Sept 2022)
-  - Released Version 2.
 - 1.0.22 (1 Feb 2022)
   - Fixed Incorrect base url concatenation with request config url.
 - 1.0.21 (31 Jan 2022)
   - Fixed lastRequest incorrect Cancel Token Clone.
   - Added `LastRequest` as return type to `lastRequest()` function.
+
+## TODO
+
+- Add Unit Tests
+- Handle Nodejs Http Requests.
+- Adding events on `RestfulEndpoint` i.e `onListing` `onCreating` and so on.
