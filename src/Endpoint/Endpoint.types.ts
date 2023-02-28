@@ -44,7 +44,10 @@ export type EndpointConfigurations = AxiosRequestConfig & {
     | ((requestConfig: AxiosRequestConfig) => string);
 };
 
-export type RequestEndpointConfigurations = EndpointConfigurations & {
+export type RequestEndpointConfigurations = Omit<
+  EndpointConfigurations,
+  "cacheOptions"
+> & {
   /**
    * Cache options
    */
