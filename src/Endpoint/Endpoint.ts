@@ -2,7 +2,11 @@ import events, { EventSubscription } from "@mongez/events";
 import { merge, Random } from "@mongez/reinforcements";
 import Is from "@mongez/supportive-is";
 import axios, { Axios, AxiosRequestConfig, AxiosResponse } from "axios";
-import { EndpointConfigurations, EndpointEvent } from "./Endpoint.types";
+import {
+  EndpointConfigurations,
+  EndpointEvent,
+  RequestEndpointConfigurations,
+} from "./Endpoint.types";
 
 export default class Endpoint extends Axios {
   /**
@@ -38,10 +42,7 @@ export default class Endpoint extends Axios {
    */
   public constructor(public configurations: EndpointConfigurations = {}) {
     super(configurations);
-    this.defaults = merge(
-      this.defaultConfigurations,
-      configurations
-    ) as any;
+    this.defaults = merge(this.defaultConfigurations, configurations) as any;
     this.configurations = merge(this.defaultConfigurations, configurations);
 
     this.boot();
@@ -160,7 +161,7 @@ export default class Endpoint extends Axios {
    */
   public get<T = any, R = AxiosResponse<T>>(
     url: string,
-    options?: EndpointConfigurations
+    options?: RequestEndpointConfigurations
   ): Promise<R> {
     return new Promise(async (resolve, reject) => {
       if (

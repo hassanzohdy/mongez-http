@@ -43,3 +43,13 @@ export type EndpointConfigurations = AxiosRequestConfig & {
     | string
     | ((requestConfig: AxiosRequestConfig) => string);
 };
+
+export type RequestEndpointConfigurations = EndpointConfigurations & {
+  /**
+   * Cache options
+   */
+  cacheOptions: {
+    driver?: CacheDriverInterface;
+    expiresAfter?: number;
+  };
+};
