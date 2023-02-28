@@ -645,6 +645,9 @@ If you're still using Version 1, you can see its documentation in [Version 1 Doc
 
 ## Change Log
 
+- 2.2.0 (28 Feb 2023)
+  - Updated dependencies.
+  - Fixed cache options
 - 2.1.0 (07 Nov 2022)
   - Added caching support.
 - 2.0.0 (19 Sept 2022)

@@ -1,7 +1,12 @@
 import events, { EventSubscription } from "@mongez/events";
-import { merge, Random } from "@mongez/reinforcements";
+import { merge, Random, set } from "@mongez/reinforcements";
 import Is from "@mongez/supportive-is";
-import axios, { Axios, AxiosRequestConfig, AxiosResponse } from "axios";
+import axios, {
+  Axios,
+  AxiosRequestConfig,
+  AxiosResponse,
+  InternalAxiosRequestConfig,
+} from "axios";
 import {
   EndpointConfigurations,
   EndpointEvent,
@@ -76,56 +81,58 @@ export default class Endpoint extends Axios {
    * Add request interceptors
    */
   protected addRequestInterceptors() {
-    this.interceptors.request.use((requestConfig: AxiosRequestConfig) => {
-      // A workaround for put requests to be sent as post request
-      // this will allow us to upload images
-      const headers = requestConfig.headers || {};
+    this.interceptors.request.use(
+      (requestConfig: InternalAxiosRequestConfig) => {
+        // A workaround for put requests to be sent as post request
+        // this will allow us to upload images
+        const headers = requestConfig.headers || {};
 
-      const isPutRequest = requestConfig.method?.toUpperCase() === "PUT";
+        const isPutRequest = requestConfig.method?.toUpperCase() === "PUT";
 
-      let data = requestConfig.data;
+        let data = requestConfig.data;
 
-      if (Is.formElement(data)) {
-        data = new FormData(data);
-      }
-
-      if (isPutRequest && this.configurations.putToPost) {
-        requestConfig.method = "POST";
-        if (Is.formData(data)) {
-          data.append(this.configurations.putMethodKey, "PUT");
-        } else if (Is.plainObject(data) && this.configurations.putMethodKey) {
-          data = set(data, this.configurations.putMethodKey, "PUT");
+        if (Is.formElement(data)) {
+          data = new FormData(data);
         }
+
+        if (isPutRequest && this.configurations.putToPost) {
+          requestConfig.method = "POST";
+          if (Is.formData(data)) {
+            data.append(this.configurations.putMethodKey, "PUT");
+          } else if (Is.plainObject(data) && this.configurations.putMethodKey) {
+            data = set(data, this.configurations.putMethodKey, "PUT");
+          }
+        }
+
+        if (Is.plainObject(data)) {
+          headers!["Content-Type"] = "Application/json";
+
+          data = JSON.stringify(data);
+        }
+
+        requestConfig.data = data;
+
+        const authHeader = this.configurations.setAuthorizationHeader;
+
+        if (authHeader && !headers?.Authorization) {
+          headers.Authorization =
+            typeof authHeader === "function"
+              ? authHeader(requestConfig)
+              : authHeader;
+        }
+
+        requestConfig.headers = headers;
+
+        this.lastRequest = new AbortController();
+
+        requestConfig.signal = this.lastRequest.signal;
+
+        // trigger event of sending ajax request
+        this.trigger("sending", requestConfig);
+
+        return requestConfig;
       }
-
-      if (Is.plainObject(data)) {
-        headers!["Content-Type"] = "Application/json";
-
-        data = JSON.stringify(data);
-      }
-
-      requestConfig.data = data;
-
-      const authHeader = this.configurations.setAuthorizationHeader;
-
-      if (authHeader && !headers?.Authorization) {
-        headers.Authorization =
-          typeof authHeader === "function"
-            ? authHeader(requestConfig)
-            : authHeader;
-      }
-
-      requestConfig.headers = headers;
-
-      this.lastRequest = new AbortController();
-
-      requestConfig.signal = this.lastRequest.signal;
-
-      // trigger event of sending ajax request
-      this.trigger("sending", requestConfig);
-
-      return requestConfig;
-    });
+    );
   }
 
   /**
@@ -164,10 +171,11 @@ export default class Endpoint extends Axios {
     options?: RequestEndpointConfigurations
   ): Promise<R> {
     return new Promise(async (resolve, reject) => {
-      if (
+      const isCacheable =
         options?.cache ||
-        (this.configurations.cache && options?.cache !== false)
-      ) {
+        (this.configurations.cache && options?.cache !== false);
+
+      if (isCacheable) {
         const cacheConfigurations = {
           ...(this.configurations.cacheOptions || {}),
           ...(options?.cacheOptions || {}),
@@ -185,16 +193,18 @@ export default class Endpoint extends Axios {
           super
             .get(url, options)
             .then((response) => {
-              cacheDriver?.set(
-                cacheKey,
-                {
-                  data: response.data,
-                  status: response.status,
-                  statusText: response.statusText,
-                  headers: response.headers,
-                },
-                cacheConfigurations.expiresAfter
-              );
+              if (isCacheable) {
+                cacheDriver?.set(
+                  cacheKey,
+                  {
+                    data: response.data,
+                    status: response.status,
+                    statusText: response.statusText,
+                    headers: response.headers,
+                  },
+                  cacheConfigurations.expiresAfter
+                );
+              }
               resolve(response as any);
             })
             .catch((error) => reject(error));

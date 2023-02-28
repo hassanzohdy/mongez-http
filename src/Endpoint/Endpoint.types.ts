@@ -1,4 +1,3 @@
-import { CacheDriverInterface } from "@mongez/cache";
 import { AxiosRequestConfig } from "axios";
 export type EndpointEvent = "sending" | "success" | "error" | "complete";
 
@@ -21,7 +20,7 @@ export type EndpointConfigurations = AxiosRequestConfig & {
    * Cache options
    */
   cacheOptions?: {
-    driver: CacheDriverInterface;
+    driver: any;
     expiresAfter?: number;
   };
 
@@ -52,7 +51,7 @@ export type RequestEndpointConfigurations = Omit<
    * Cache options
    */
   cacheOptions: {
-    driver?: CacheDriverInterface;
+    driver?: any;
     expiresAfter?: number;
   };
 };
