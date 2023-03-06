@@ -123,9 +123,11 @@ export default class Endpoint extends Axios {
 
         requestConfig.headers = headers;
 
-        this.lastRequest = new AbortController();
+        if (!requestConfig.signal) {
+          this.lastRequest = new AbortController();
 
-        requestConfig.signal = this.lastRequest.signal;
+          requestConfig.signal = this.lastRequest.signal;
+        }
 
         // trigger event of sending ajax request
         this.trigger("sending", requestConfig);
@@ -170,7 +172,7 @@ export default class Endpoint extends Axios {
     url: string,
     options?: RequestEndpointConfigurations
   ): Promise<R> {
-    return new Promise(async (resolve, reject) => {
+    const request: Promise<R> = new Promise(async (resolve, reject) => {
       const isCacheable =
         options?.cache ||
         (this.configurations.cache && options?.cache !== false);
@@ -216,6 +218,8 @@ export default class Endpoint extends Axios {
           .catch(reject);
       }
     });
+
+    return request;
   }
 
   /**
