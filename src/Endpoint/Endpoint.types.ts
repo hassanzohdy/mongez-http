@@ -50,7 +50,7 @@ export type RequestEndpointConfigurations = Omit<
   /**
    * Cache options
    */
-  cacheOptions: {
+  cacheOptions?: {
     driver?: any;
     expiresAfter?: number;
   };
