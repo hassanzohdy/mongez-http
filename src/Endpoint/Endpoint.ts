@@ -185,7 +185,7 @@ export default class Endpoint extends Axios {
 
         const cacheDriver = cacheConfigurations.driver;
 
-        const cacheKey = this.getCacheKey(url);
+        const cacheKey = this.getCacheKey(url, options?.params);
 
         const response = await cacheDriver?.get(cacheKey);
 
@@ -279,7 +279,13 @@ export default class Endpoint extends Axios {
   /**
    * Get cache key form the given path
    */
-  public getCacheKey(path: string) {
-    return `endpoint.${this.configurations.baseURL}.${path}`;
+  public getCacheKey(path: string, params?: any) {
+    const key = `endpoint.${this.configurations.baseURL}.${path}`;
+
+    if (params) {
+      return key + "." + JSON.stringify(params);
+    }
+
+    return key;
   }
 }
