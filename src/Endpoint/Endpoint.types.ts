@@ -40,7 +40,7 @@ export type EndpointConfigurations = AxiosRequestConfig & {
    */
   setAuthorizationHeader?:
     | string
-    | ((requestConfig: AxiosRequestConfig) => string);
+    | ((requestConfig: AxiosRequestConfig) => string | undefined | null);
 };
 
 export type RequestEndpointConfigurations = Omit<

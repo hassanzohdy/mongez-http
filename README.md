@@ -645,6 +645,9 @@ If you're still using Version 1, you can see its documentation in [Version 1 Doc
 
 ## Change Log
 
+- 2.2.4 (16 Apr 2023)
+  - Updated Dependencies.
+  - Now `setAuthorizationHeader` if didn't return a value the `Authorization` header will not be added.
 - 2.2.0 (28 Feb 2023)
   - Updated dependencies.
   - Fixed cache options

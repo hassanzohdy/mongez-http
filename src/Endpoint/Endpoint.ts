@@ -115,10 +115,15 @@ export default class Endpoint extends Axios {
         const authHeader = this.configurations.setAuthorizationHeader;
 
         if (authHeader && !headers?.Authorization) {
-          headers.Authorization =
-            typeof authHeader === "function"
-              ? authHeader(requestConfig)
-              : authHeader;
+          if (typeof authHeader === "function") {
+            const authorizationValue = authHeader(requestConfig);
+
+            if (authorizationValue) {
+              headers.Authorization = authorizationValue;
+            }
+          } else {
+            headers.Authorization = authHeader;
+          }
         }
 
         requestConfig.headers = headers;
