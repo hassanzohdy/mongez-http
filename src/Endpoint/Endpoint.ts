@@ -293,4 +293,18 @@ export default class Endpoint extends Axios {
 
     return key;
   }
+
+  /**
+   * Get configurations list
+   */
+  public getConfigurations() {
+    return this.configurations;
+  }
+
+  /**
+   * Get config for the given key
+   */
+  public getConfig(key: keyof EndpointConfigurations, defaultValue?: any) {
+    return this.configurations[key] ?? defaultValue;
+  }
 }

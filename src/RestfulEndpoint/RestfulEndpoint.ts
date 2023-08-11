@@ -61,7 +61,7 @@ export default class RestfulEndpoint implements RestfulService {
   public publish(
     id: number | string,
     published: boolean | HttpData,
-    publishKey = "published",
+    publishKey = this.endpoint.getConfig("publishKey", "published"),
     config: AxiosRequestConfig = {}
   ): Promise<AxiosResponse> {
     const data =

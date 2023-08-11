@@ -41,6 +41,13 @@ export type EndpointConfigurations = AxiosRequestConfig & {
   setAuthorizationHeader?:
     | string
     | ((requestConfig: AxiosRequestConfig) => string | undefined | null);
+
+  /**
+   * Published key
+   *
+   * @default published
+   */
+  publishKey?: string;
 };
 
 export type RequestEndpointConfigurations = Omit<

@@ -17,7 +17,6 @@ Axios is an awesome library, and provides you with great features, however, ther
 7. Easily abort requests.
 8. Easily listen to endpoint events, before sending, on success, on error, and on complete.
 
-
 ## Installation
 
 `yarn add @mongez/http`
@@ -373,6 +372,18 @@ const id: number = 1;
 // request payload: { activated: true }
 usersService.publish(id, isActivated, "activated").then((response) => {
   // user resource is patched successfully.
+});
+```
+
+Or you can set it globally when creating the endpoint instance.
+
+```ts
+// src/endpoints.ts
+import Endpoint from "@mongez/http";
+
+export const endpoint = new Endpoint({
+  baseURL: "https://jsonplaceholder.typicode.com",
+  publishKey: "isActive",
 });
 ```
 
