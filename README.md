@@ -4,9 +4,19 @@ An [Axios Based Package](https://www.npmjs.com/package/axios) and Promise based 
 
 ## Why not using axios directly instead?
 
-Axios is an awesome library, and provides you with great features, however, there are some missing features that is needed in most of our real world projects:
+Axios is an awesome library, and provides you with great features, however, there are some missing features that is needed in most of our real world projects.
 
-> For demonstration purpose only, we may use React syntax for illustration when dealing with forms.
+## Features
+
+1. Everything that axios provides.
+2. Easily convert `PUT` requests to `POST` requests with `_method=PUT` appended to the request body.
+3. Easily set `Authorization` header for all requests.
+4. Easily create Restful API endpoints with a single class.
+5. Properly guides you to create your endpoints functions.
+6. Empowers Cache Management.
+7. Easily abort requests.
+8. Easily listen to endpoint events, before sending, on success, on error, and on complete.
+
 
 ## Installation
 
@@ -20,20 +30,24 @@ Or
 
 Let's create a new Endpoint instance to handle our requests:
 
+> For demonstration purpose only, we may use React syntax for illustration when dealing with forms.
+
 ```ts
 // src/endpoints.ts
-import Endpoint from '@mongez/http';
+import Endpoint from "@mongez/http";
 
 export const endpoint = new Endpoint({
-    baseURL: 'https://jsonplaceholder.typicode.com',
+  baseURL: "https://jsonplaceholder.typicode.com",
 });
 
-endpoint.post('/login', {
-    email: 'hassanzohdy@gmail.com',
-    password: '0000000',
-}).then(response => {
+endpoint
+  .post("/login", {
+    email: "hassanzohdy@gmail.com",
+    password: "0000000",
+  })
+  .then((response) => {
     //
-});
+  });
 ```
 
 Now we can use this endpoint to make requests from any service files or even components.
@@ -86,29 +100,28 @@ You can also change the key of the appended data by changing the `putMethodKey` 
 If your backend api requires `Authorization` header in every request, You may set Authorization header from configurations either as a string or as a callback,
 
 ```ts
-
-import Endpoint from '@mongez/http';
+import Endpoint from "@mongez/http";
 
 export const endpoint = new Endpoint({
-    baseURL: 'https://api.sitename.com/v1',
-    setAuthorizationHeader: () => {
-        if (user.isLoggedIn()) {
-            return `Bearer ${user.getAccessToken()}`;
-        }
-
-        return 'key some-api-key';
+  baseURL: "https://api.sitename.com/v1",
+  setAuthorizationHeader: () => {
+    if (user.isLoggedIn()) {
+      return `Bearer ${user.getAccessToken()}`;
     }
+
+    return "key some-api-key";
+  },
 });
 ```
 
 Or you may set it directly as string, for example if the api only accept `key` authorization header:
 
 ```ts
-import Endpoint from '@mongez/http';
+import Endpoint from "@mongez/http";
 
 export const endpoint = new Endpoint({
-    baseURL: 'https://api.sitename.com/v1',
-    setAuthorizationHeader: 'key some-api-key',
+  baseURL: "https://api.sitename.com/v1",
+  setAuthorizationHeader: "key some-api-key",
 });
 ```
 
@@ -120,18 +133,18 @@ In some situations, such as Admin Dashboard, there would be pages that implement
 
 ```ts
 // src/services/users-service.ts
-import { endpoint } from './endpoints';
-import { RestfulEndpoint } from '@mongez/http';
+import { endpoint } from "./endpoints";
+import { RestfulEndpoint } from "@mongez/http";
 
 class UsersService extends RestfulEndpoint {
-    /**
-     * {@inheritDoc}
-     */ 
-    public route: string = '/users';
-    /**
-     * Endpoint handler
-     */
-    public endpoint = endpoint;
+  /**
+   * {@inheritDoc}
+   */
+  public route: string = "/users";
+  /**
+   * Endpoint handler
+   */
+  public endpoint = endpoint;
 }
 
 const usersService: UsersService = new UsersService();
@@ -147,10 +160,10 @@ If you're application uses only one endpoint, you can set the current endpoint i
 
 ```ts
 // endpoints.ts
-import Endpoint, { setCurrentEndpoint } from '@mongez/http';
+import Endpoint, { setCurrentEndpoint } from "@mongez/http";
 
 export const endpoint = new Endpoint({
-    baseURL: 'https://jsonplaceholder.typicode.com',
+  baseURL: "https://jsonplaceholder.typicode.com",
 });
 
 setCurrentEndpoint(endpoint);
@@ -160,13 +173,13 @@ Now we can use the `RestfulEndpoint` class without setting the `endpoint` proper
 
 ```ts
 // src/services/users-service.ts
-import { RestfulEndpoint } from '@mongez/http';
+import { RestfulEndpoint } from "@mongez/http";
 
 class UsersService extends RestfulEndpoint {
-    /**
-     * {@inheritDoc}
-     */ 
-    public route: string = '/users';
+  /**
+   * {@inheritDoc}
+   */
+  public route: string = "/users";
 }
 
 const usersService: UsersService = new UsersService();
@@ -177,7 +190,7 @@ export default usersService;
 Of course you can get the current endpoint instance using `getCurrentEndpoint` method.
 
 ```ts
-import { getCurrentEndpoint } from '@mongez/http';
+import { getCurrentEndpoint } from "@mongez/http";
 
 const endpoint = getCurrentEndpoint();
 // endpoint is the same instance that we set in the above example
@@ -189,12 +202,12 @@ To get a list of records, we can use `list` method which is defined by default i
 
 ```ts
 // src/index.ts
-import usersService from './services/users-service';
+import usersService from "./services/users-service";
 
 // list users without any params sent
 // request: GET /users
-usersService.list().then(response => {
-    //
+usersService.list().then((response) => {
+  //
 });
 ```
 
@@ -202,16 +215,16 @@ We may also send params as a query string to the request as well
 
 ```ts
 // src/index.ts
-import usersService from './services/users-service';
+import usersService from "./services/users-service";
 
 // request: GET /users?paginate=true&itemsPerPage=15
 const params: object = {
-    paginate: true,
-    itemsPerPage: 15,
+  paginate: true,
+  itemsPerPage: 15,
 };
 
-usersService.list(paramsList).then(response => {
-    //
+usersService.list(paramsList).then((response) => {
+  //
 });
 ```
 
@@ -221,41 +234,43 @@ To get a single record, use `get` method.
 
 ```ts
 // src/index.ts
-import usersService from './services/users-service';
+import usersService from "./services/users-service";
 
 // get user information
 const userId: number = 1;
 // request: GET /users/1
-usersService.get(userId).then(response => {
-    //
+usersService.get(userId).then((response) => {
+  //
 });
 
 // get user with additional params sent with the request
 // request: GET /users/1?active=true
-usersService.get(userId, {
-    active: true
-}).then(response => {
+usersService
+  .get(userId, {
+    active: true,
+  })
+  .then((response) => {
     //
-});
+  });
 ```
 
 We may also send additional params with the single record as a query string.
 
 ```ts
 // src/index.ts
-import usersService from './services/users-service';
+import usersService from "./services/users-service";
 
 // get user information
 const userId: number = 1;
 
 const params: object = {
-    active: true
+  active: true,
 };
 
 // get user with additional params sent with the request
 // request: GET /users/1?active=true
-usersService.get(userId, params).then(response => {
-    //
+usersService.get(userId, params).then((response) => {
+  //
 });
 ```
 
@@ -267,17 +282,17 @@ Creating a new record can be done from the endpoint service using `create` metho
 
 ```ts
 // src/index.ts
-import usersService from './services/users-service';
+import usersService from "./services/users-service";
 
 const data: object = {
-    email: 'hassanzohdy@gmail.com',
-    password: '123456789',
-    confirmPassword: '123456789',
+  email: "hassanzohdy@gmail.com",
+  password: "123456789",
+  confirmPassword: "123456789",
 };
 
 // POST /users
-usersService.create(data).then(response => {
-    // user request is created successfully.
+usersService.create(data).then((response) => {
+  // user request is created successfully.
 });
 ```
 
@@ -289,19 +304,19 @@ Updating an existing record is also can be done using `update` method.
 
 ```ts
 // src/index.ts
-import usersService from './services/users-service';
+import usersService from "./services/users-service";
 
 const data: object = {
-    email: 'hassanzohdy@gmail.com',
-    password: '123456789',
-    confirmPassword: '123456789',
+  email: "hassanzohdy@gmail.com",
+  password: "123456789",
+  confirmPassword: "123456789",
 };
 
 const id: number = 1;
 
 // PUT /users/1
-usersService.update(id, data).then(response => {
-    // user resource is updated successfully.
+usersService.update(id, data).then((response) => {
+  // user resource is updated successfully.
 });
 ```
 
@@ -311,17 +326,17 @@ Creating a small updates on records can be done use `patch` method.
 
 ```ts
 // src/index.ts
-import usersService from './services/users-service';
+import usersService from "./services/users-service";
 
 const data: object = {
-    published: true
+  published: true,
 };
 
 const id: number = 1;
 
 // PATCH /users/1
-usersService.patch(id, data).then(response => {
-    // user resource is patched successfully.
+usersService.patch(id, data).then((response) => {
+  // user resource is patched successfully.
 });
 ```
 
@@ -331,7 +346,7 @@ A smaller method that allow you to publish/un-publish records using `publish` me
 
 ```ts
 // src/index.ts
-import usersService from './services/users-service';
+import usersService from "./services/users-service";
 
 const isPublished: boolean = true;
 
@@ -339,8 +354,8 @@ const id: number = 1;
 
 // PATCH /users/1
 // request payload: { published: true }
-usersService.publish(id, isPublished).then(response => {
-    // user resource is patched successfully.
+usersService.publish(id, isPublished).then((response) => {
+  // user resource is patched successfully.
 });
 ```
 
@@ -348,7 +363,7 @@ You may change the `published` key to another key by passing your desired key in
 
 ```ts
 // src/index.ts
-import usersService from './services/users-service';
+import usersService from "./services/users-service";
 
 const isActivated: boolean = true;
 
@@ -356,8 +371,8 @@ const id: number = 1;
 
 // PATCH /users/1
 // request payload: { activated: true }
-usersService.publish(id, isActivated, 'activated').then(response => {
-    // user resource is patched successfully.
+usersService.publish(id, isActivated, "activated").then((response) => {
+  // user resource is patched successfully.
 });
 ```
 
@@ -367,14 +382,34 @@ Our final method in the Restful API concept is to delete a resource/record.
 
 ```ts
 // src/index.ts
-import usersService from './services/users-service';
+import usersService from "./services/users-service";
 
 const id: number = 1;
 
 // DELETE /users/1
-usersService.delete(id).then(response => {
-    // user resource is patched successfully.
+usersService.delete(id).then((response) => {
+  // deleted successfully.
 });
+```
+
+### Bulk Delete
+
+This feature allows you to perform a bulk delete on a list of records, it will call the resource path with `DELETE` method and send the ids as an array of ids.
+
+```ts
+// src/index.ts
+import usersService from "./services/users-service";
+
+const ids: number[] = [1, 2, 3];
+
+// DELETE /users
+usersService
+  .bulkDelete({
+    id: ids,
+  })
+  .then((response) => {
+    // deleted successfully.
+  });
 ```
 
 ### Creating Custom methods
@@ -383,20 +418,20 @@ In some cases we may need to create custom methods that can be used later in our
 
 ```ts
 // src/services/users-service.ts
-import { RestfulEndpoint } from '@mongez/http';
+import { RestfulEndpoint } from "@mongez/http";
 
 class UsersService extends RestfulEndpoint {
-    /**
-     * {@inheritDoc}
-     */ 
-    public route: string = '/users';
+  /**
+   * {@inheritDoc}
+   */
+  public route: string = "/users";
 
-    /**
-     * Get active members only
-     */
-    public listActive() {
-        return this.endpoint.get(this.path('/active'));
-    } 
+  /**
+   * Get active members only
+   */
+  public listActive() {
+    return this.endpoint.get(this.path("/active"));
+  }
 }
 
 const usersService: UsersService = new UsersService();
@@ -424,15 +459,15 @@ In the next example, we'll see how to use an example of sending post request usi
 > If data is sent as plain object, then a request header `"Content-Type": "Application/json"` will be added to headers by default.
 
 ```ts
-import endpoint from './endpoints';
+import endpoint from "./endpoints";
 
 const data: object = {
-    email: 'hassanzohdy@gmail.com',
-    password: '123456789',
-}
+  email: "hassanzohdy@gmail.com",
+  password: "123456789",
+};
 
-endpoint.post('/login', data).then(response => {
-    //
+endpoint.post("/login", data).then((response) => {
+  //
 });
 ```
 
@@ -442,25 +477,25 @@ In the next example, we'll see how to use an example of sending post request usi
 
 ```tsx
 // Form.tsx
-import React from 'react'; 
-import endpoint from './endpoints';
+import React from "react";
+import endpoint from "./endpoints";
 
 export default function MyForm() {
-    const submitForm = e => {
-        e.preventDefault();
+  const submitForm = (e) => {
+    e.preventDefault();
 
-        const formElement: HTMLFormElement = e.target;
-        
-        endpoint.post('/login', formElement).then(response => {
-            //
-        });
-    }
-    return (
-        <form onSubmit={submitForm}>
-            <input name="email" type="email" />
-            <input name="password" type="password" />
-        </form>
-    )
+    const formElement: HTMLFormElement = e.target;
+
+    endpoint.post("/login", formElement).then((response) => {
+      //
+    });
+  };
+  return (
+    <form onSubmit={submitForm}>
+      <input name="email" type="email" />
+      <input name="password" type="password" />
+    </form>
+  );
 }
 ```
 
@@ -470,27 +505,27 @@ In the next example, we'll see how to use an example of sending post request usi
 
 ```tsx
 // Form.tsx
-import React from 'react'; 
-import endpoint from './endpoints';
+import React from "react";
+import endpoint from "./endpoints";
 
 export default function MyForm() {
-    const submitForm = e => {
-        e.preventDefault();
+  const submitForm = (e) => {
+    e.preventDefault();
 
-        const formElement: HTMLFormElement = e.target;
+    const formElement: HTMLFormElement = e.target;
 
-        const formData = new FormData(formElement);
-        
-        endpoint.post('/login', formData).then(response => {
-            //
-        });
-    }
-    return (
-        <form onSubmit={submitForm}>
-            <input name="email" type="email" />
-            <input name="password" type="password" />
-        </form>
-    )
+    const formData = new FormData(formElement);
+
+    endpoint.post("/login", formData).then((response) => {
+      //
+    });
+  };
+  return (
+    <form onSubmit={submitForm}>
+      <input name="email" type="email" />
+      <input name="password" type="password" />
+    </form>
+  );
 }
 ```
 
@@ -504,31 +539,32 @@ You can listen to events on the endpoint instance, the events are:
 - `onComplete`: will be fired when the request is finished wether success or failed requests.
 
 ```ts
-
-import endpoint from './endpoints';
+import endpoint from "./endpoints";
 import { AxiosRequestConfig, AxiosResponse } from "axios";
 import { EventSubscription } from "@mongez/events";
 
 // This is triggered before sending any request
-endpoint.events.beforeSending((requestConfig:AxiosRequestConfig): EventSubscription => {
+endpoint.events.beforeSending(
+  (requestConfig: AxiosRequestConfig): EventSubscription => {
     // do something
-});
+  }
+);
 
 // This is triggered when the request is successful
 
 endpoint.events.onSuccess((response: AxiosResponse): EventSubscription => {
-    // do something
+  // do something
 });
 
 // This is triggered when the request is failed
 
 endpoint.events.onError((response: AxiosResponse): EventSubscription => {
-    // do something
+  // do something
 });
 
 // This is triggered when the request is finished wether success or failed requests
 endpoint.events.onComplete((response: AxiosResponse): EventSubscription => {
-    // do something
+  // do something
 });
 ```
 
@@ -539,10 +575,10 @@ The `onComplete` event will be triggered before `onSuccess` and `onError` events
 You can abort a request by getting the last request instance using `getLastRequest` method which is an instance of [AbortController](https://github.com/axios/axios#abortcontroller).
 
 ```ts
-import endpoint from './endpoints';
+import endpoint from "./endpoints";
 
-endpoint.get('/users').then(response => {
-    // do something
+endpoint.get("/users").then((response) => {
+  // do something
 });
 
 const lastRequest = endpoint.getLastRequest();
@@ -557,28 +593,32 @@ lastRequest.abort();
 You can now easily cache your `get` requests, to do so, you need to pass the `cache` option to the request method.
 
 ```ts
-import endpoint from './endpoints';
+import endpoint from "./endpoints";
 
-endpoint.get('/users', {
+endpoint
+  .get("/users", {
     cache: true,
-}).then(response => {
+  })
+  .then((response) => {
     // do something
-});
+  });
 ```
 
 By default request will be cached for 5 minutes, you can change this by passing the `cacheTime` option.
 
 ```ts
-import endpoint from './endpoints';
+import endpoint from "./endpoints";
 
-endpoint.get('/users', {
+endpoint
+  .get("/users", {
     cache: true,
     cacheOptions: {
-        expiresAfter: 10 * 60 // 10 minutes
-    }
-}).then(response => {
+      expiresAfter: 10 * 60, // 10 minutes
+    },
+  })
+  .then((response) => {
     // do something
-});
+  });
 ```
 
 Here we defined the cache time to be 10 minutes.
@@ -588,35 +628,39 @@ However, we need to define the cache driver that will contain the cached data, t
 You can easily use any [cache driver here](https://github.com/hassanzohdy/mongez-cache) or the cache manger directly.
 
 ```ts
-import endpoint from './endpoints';
-import cache from '@mongez/cache';
+import endpoint from "./endpoints";
+import cache from "@mongez/cache";
 
-endpoint.get('/users', {
+endpoint
+  .get("/users", {
     cache: true,
     cacheOptions: {
-        driver: cache,
-        expiresAfter: 10 * 60 // 10 minutes
-    }
-}).then(response => {
+      driver: cache,
+      expiresAfter: 10 * 60, // 10 minutes
+    },
+  })
+  .then((response) => {
     // do something
-});
+  });
 ```
 
 Using Run Time Driver will cache the data until the user refreshes the page regardless of the cache time, so you you may use it directly if you want to save it in the run time.
 
 ```ts
-import endpoint from './endpoints';
-import { RunTimeDriver } from '@mongez/cache';
+import endpoint from "./endpoints";
+import { RunTimeDriver } from "@mongez/cache";
 
-endpoint.get('/users', {
+endpoint
+  .get("/users", {
     cache: true,
     cacheOptions: {
-        driver: new RunTimeDriver(),
-        expiresAfter: 10 * 60 // 10 minutes
-    }
-}).then(response => {
+      driver: new RunTimeDriver(),
+      expiresAfter: 10 * 60, // 10 minutes
+    },
+  })
+  .then((response) => {
     // do something
-});
+  });
 ```
 
 You can also set the default cache options for all requests by passing the `cacheOptions` property to the endpoint instance and `cache` flag.

@@ -56,6 +56,14 @@ export interface RestfulService {
   delete: (id: number, config?: AxiosRequestConfig) => Promise<AxiosResponse>;
 
   /**
+   * Bulk delete
+   */
+  bulkDelete: (
+    data: any,
+    config?: AxiosRequestConfig
+  ) => Promise<AxiosResponse>;
+
+  /**
    * Delete existing record
    *
    * @param   {number} id

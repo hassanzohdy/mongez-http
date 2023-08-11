@@ -102,6 +102,17 @@ export default class RestfulEndpoint implements RestfulService {
   }
 
   /**
+   * Delete multiple records
+   */
+  public bulkDelete(
+    data,
+    config: AxiosRequestConfig = {}
+  ): Promise<AxiosResponse> {
+    config.data = data;
+    return this.endpoint.delete(this.path(), config);
+  }
+
+  /**
    * Patch an update on a record
    */
   public patch(
