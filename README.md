@@ -597,6 +597,25 @@ const lastRequest = endpoint.getLastRequest();
 lastRequest.abort();
 ```
 
+Of course you can use the original Axios `signal` property to abort the request.
+
+```ts
+import endpoint from "./endpoints";
+
+const abortController = new AbortController();
+
+endpoint
+  .get("/users", {
+    signal: abortController.signal,
+  })
+  .then((response) => {
+    // do something
+  });
+
+// Anywhere in your code
+abortController.abort();
+```
+
 ## Caching
 
 > Added in 2.1.0
