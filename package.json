@@ -1,14 +1,14 @@
 {
     "name": "@mongez/http",
-    "version": "2.2.5",
+    "version": "2.2.6",
     "description": "Powerful yet simple package for handling ajax requests",
     "main": "src/index.ts",
     "dependencies": {
         "@mongez/concat-route": "^1.0.0",
         "@mongez/events": "^2.1.0",
-        "@mongez/reinforcements": "^2.3.7",
-        "@mongez/supportive-is": "^1.0.12",
-        "axios": "1.4.0"
+        "@mongez/reinforcements": "^2.3.8",
+        "@mongez/supportive-is": "^2.0.0",
+        "axios": "^1.5.0"
     },
     "scripts": {
         "test": "jest tests --coverage"

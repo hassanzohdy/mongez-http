@@ -1,6 +1,10 @@
 import events, { EventSubscription } from "@mongez/events";
 import { merge, Random, set } from "@mongez/reinforcements";
-import Is from "@mongez/supportive-is";
+import {
+  isFormData,
+  isFormElement,
+  isPlainObject,
+} from "@mongez/supportive-is";
 import axios, {
   Axios,
   AxiosRequestConfig,
@@ -91,20 +95,20 @@ export default class Endpoint extends Axios {
 
         let data = requestConfig.data;
 
-        if (Is.formElement(data)) {
+        if (isFormElement(data)) {
           data = new FormData(data);
         }
 
         if (isPutRequest && this.configurations.putToPost) {
           requestConfig.method = "POST";
-          if (Is.formData(data)) {
+          if (isFormData(data)) {
             data.append(this.configurations.putMethodKey, "PUT");
-          } else if (Is.plainObject(data) && this.configurations.putMethodKey) {
+          } else if (isPlainObject(data) && this.configurations.putMethodKey) {
             data = set(data, this.configurations.putMethodKey, "PUT");
           }
         }
 
-        if (Is.plainObject(data)) {
+        if (isPlainObject(data)) {
           headers!["Content-Type"] = "Application/json";
 
           data = JSON.stringify(data);
