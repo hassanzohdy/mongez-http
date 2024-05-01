@@ -20,8 +20,24 @@ export type EndpointConfigurations = AxiosRequestConfig & {
    * Cache options
    */
   cacheOptions?: {
+    /**
+     * Cache driver
+     */
     driver: any;
+    /**
+     * Cache expiration time in seconds
+     *
+     * @deprecated use `ttl` instead
+     */
     expiresAfter?: number;
+    /**
+     * Cache expiration time in seconds
+     */
+    ttl?: number;
+    /**
+     * Generate cache key
+     */
+    generateKey?: (url: string, params?: any) => string;
   };
 
   /**
@@ -60,5 +76,6 @@ export type RequestEndpointConfigurations = Omit<
   cacheOptions?: {
     driver?: any;
     expiresAfter?: number;
+    key?: string;
   };
 };

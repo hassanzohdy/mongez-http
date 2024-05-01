@@ -1,6 +1,6 @@
 {
     "name": "@mongez/http",
-    "version": "2.2.6",
+    "version": "2.2.7",
     "description": "Powerful yet simple package for handling ajax requests",
     "main": "src/index.ts",
     "dependencies": {

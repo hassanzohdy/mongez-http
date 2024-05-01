@@ -643,7 +643,7 @@ endpoint
   .get("/users", {
     cache: true,
     cacheOptions: {
-      expiresAfter: 10 * 60, // 10 minutes
+      ttl: 10 * 60, // 10 minutes
     },
   })
   .then((response) => {
@@ -666,7 +666,7 @@ endpoint
     cache: true,
     cacheOptions: {
       driver: cache,
-      expiresAfter: 10 * 60, // 10 minutes
+      ttl: 10 * 60, // 10 minutes
     },
   })
   .then((response) => {
@@ -685,7 +685,7 @@ endpoint
     cache: true,
     cacheOptions: {
       driver: new RunTimeDriver(),
-      expiresAfter: 10 * 60, // 10 minutes
+      ttl: 10 * 60, // 10 minutes
     },
   })
   .then((response) => {
@@ -705,7 +705,7 @@ export const endpoint = new Endpoint({
     baseURL: 'https://jsonplaceholder.typicode.com',
     cache: true, // enable cache for all get requests
     cacheOptions: {
-        expiresAfter: 10 * 60 // 10 minutes
+        ttl: 10 * 60 // 10 minutes
         driver: cache,
     }
 });

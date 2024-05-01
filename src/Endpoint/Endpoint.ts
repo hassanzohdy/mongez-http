@@ -30,7 +30,7 @@ export default class Endpoint extends Axios {
     putToPost: false,
     cache: false,
     cacheOptions: {
-      expiresAfter: 5 * 60, // 5 minutes
+      ttl: 5 * 60, // 5 minutes
     },
     putMethodKey: "_method",
     ...(axios.defaults as any),
@@ -194,7 +194,14 @@ export default class Endpoint extends Axios {
 
         const cacheDriver = cacheConfigurations.driver;
 
-        const cacheKey = this.getCacheKey(url, options?.params);
+        const cacheKey =
+          cacheConfigurations.key ??
+          this.configurations.cacheOptions?.generateKey
+            ? this.configurations?.cacheOptions?.generateKey?.(
+                url,
+                options?.params
+              )
+            : this.getCacheKey(url, options?.params);
 
         const response = await cacheDriver?.get(cacheKey);
 
@@ -213,7 +220,7 @@ export default class Endpoint extends Axios {
                     statusText: response.statusText,
                     headers: response.headers,
                   },
-                  cacheConfigurations.expiresAfter
+                  cacheConfigurations.ttl ?? cacheConfigurations.expiresAfter
                 );
               }
               resolve(response as any);
