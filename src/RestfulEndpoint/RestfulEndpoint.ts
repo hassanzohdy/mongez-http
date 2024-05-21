@@ -77,7 +77,7 @@ export default class RestfulEndpoint implements RestfulService {
     data: HttpData,
     config: AxiosRequestConfig = {}
   ): Promise<AxiosResponse> {
-    return this.endpoint.post(this.route, data, config);
+    return this.endpoint.instance.post(this.route, data, config);
   }
 
   /**
@@ -88,7 +88,7 @@ export default class RestfulEndpoint implements RestfulService {
     data: HttpData,
     config: AxiosRequestConfig = {}
   ): Promise<AxiosResponse> {
-    return this.endpoint.put(this.path(id), data, config);
+    return this.endpoint.instance.put(this.path(id), data, config);
   }
 
   /**
@@ -98,7 +98,7 @@ export default class RestfulEndpoint implements RestfulService {
     id: number | string,
     config: AxiosRequestConfig = {}
   ): Promise<AxiosResponse> {
-    return this.endpoint.delete(this.path(id), config);
+    return this.endpoint.instance.delete(this.path(id), config);
   }
 
   /**
@@ -109,7 +109,7 @@ export default class RestfulEndpoint implements RestfulService {
     config: AxiosRequestConfig = {}
   ): Promise<AxiosResponse> {
     config.data = data;
-    return this.endpoint.delete(this.path(), config);
+    return this.endpoint.instance.delete(this.path(), config);
   }
 
   /**
@@ -120,7 +120,7 @@ export default class RestfulEndpoint implements RestfulService {
     data = {},
     config: AxiosRequestConfig = {}
   ): Promise<AxiosResponse> {
-    return this.endpoint.patch(this.path(id), data, config);
+    return this.endpoint.instance.patch(this.path(id), data, config);
   }
 
   /**
