@@ -7,6 +7,7 @@ import {
 } from "@mongez/supportive-is";
 import axios, {
   Axios,
+  AxiosInstance,
   AxiosRequestConfig,
   AxiosResponse,
   InternalAxiosRequestConfig,
@@ -17,7 +18,11 @@ import {
   RequestEndpointConfigurations,
 } from "./Endpoint.types";
 
-export default class Endpoint extends Axios {
+export default class Endpoint {
+  /**
+   * Axios instance
+   */
+  private axiosInstance!: AxiosInstance;
   /**
    * Last request controller
    */
@@ -50,8 +55,7 @@ export default class Endpoint extends Axios {
    * Constructor
    */
   public constructor(public configurations: EndpointConfigurations = {}) {
-    super(configurations);
-    this.defaults = merge(this.defaultConfigurations, configurations) as any;
+    this.axiosInstance = axios.create(configurations);
     this.configurations = merge(this.defaultConfigurations, configurations);
 
     this.boot();
@@ -63,7 +67,7 @@ export default class Endpoint extends Axios {
   public setConfigurations(configurations: EndpointConfigurations) {
     this.configurations = merge(this.configurations, configurations);
 
-    this.defaults = this.configurations as any;
+    Object.assign(this.axiosInstance.defaults, this.configurations);
   }
 
   /**
@@ -85,7 +89,7 @@ export default class Endpoint extends Axios {
    * Add request interceptors
    */
   protected addRequestInterceptors() {
-    this.interceptors.request.use(
+    this.axiosInstance.interceptors.request.use(
       (requestConfig: InternalAxiosRequestConfig) => {
         // A workaround for put requests to be sent as post request
         // this will allow us to upload images
@@ -150,7 +154,7 @@ export default class Endpoint extends Axios {
    * Add response interceptors
    */
   protected addResponseInterceptors() {
-    this.interceptors.response.use(
+    this.axiosInstance.interceptors.response.use(
       (response) => {
         if (response.config.signal === this.lastRequest?.signal) {
           this.lastRequest = undefined;
@@ -208,7 +212,7 @@ export default class Endpoint extends Axios {
         if (response) {
           resolve(response as any);
         } else {
-          super
+          this.axiosInstance
             .get(url, options)
             .then((response) => {
               if (isCacheable) {
@@ -228,7 +232,7 @@ export default class Endpoint extends Axios {
             .catch((error) => reject(error));
         }
       } else {
-        super
+        this.axiosInstance
           .get(url, options)
           .then(resolve as any)
           .catch(reject);
@@ -317,5 +321,12 @@ export default class Endpoint extends Axios {
    */
   public getConfig(key: keyof EndpointConfigurations, defaultValue?: any) {
     return this.configurations[key] ?? defaultValue;
+  }
+
+  /**
+   * Get Axios instance
+   */
+  public get instance() {
+    return this.axiosInstance;
   }
 }
