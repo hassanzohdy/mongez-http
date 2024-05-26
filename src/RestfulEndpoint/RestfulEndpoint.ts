@@ -1,10 +1,10 @@
 import concatRoute from "@mongez/concat-route";
 import { AxiosRequestConfig, AxiosResponse } from "axios";
 import { getCurrentEndpoint } from "../current-endpoint";
-import Endpoint from "../Endpoint";
+import { Endpoint } from "../Endpoint";
 import { HttpData, RestfulService } from "./RestfulEndpoint.types";
 
-export default class RestfulEndpoint implements RestfulService {
+export class RestfulEndpoint implements RestfulService {
   /**
    * Set the main module route
    * i.e /users

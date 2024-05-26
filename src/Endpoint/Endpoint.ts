@@ -17,7 +17,7 @@ import {
   RequestEndpointConfigurations,
 } from "./Endpoint.types";
 
-export default class Endpoint extends Axios {
+export class Endpoint extends Axios {
   /**
    * Last request controller
    */

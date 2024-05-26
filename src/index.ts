@@ -1,4 +1,4 @@
-import Endpoint from "./Endpoint";
+import { Endpoint } from "./Endpoint";
 
 export * from "./current-endpoint";
 export * from "./Endpoint";
