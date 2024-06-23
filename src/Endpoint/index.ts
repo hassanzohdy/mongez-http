@@ -1,2 +1,2 @@
-export * from "./Endpoint";
-export * from "./Endpoint.types";
+export * from './Endpoint';
+export * from './Endpoint.types';

@@ -1,21 +1,21 @@
-import events, { EventSubscription } from "@mongez/events";
-import { merge, Random, set } from "@mongez/reinforcements";
-import {
-  isFormData,
-  isFormElement,
-  isPlainObject,
-} from "@mongez/supportive-is";
+/* eslint-disable prefer-destructuring */
+/* eslint-disable @typescript-eslint/no-shadow */
+/* eslint-disable no-async-promise-executor */
+import { getCacheConfig } from '@mongez/cache';
+import events, { EventSubscription } from '@mongez/events';
+import { merge, Random, set } from '@mongez/reinforcements';
+import { isFormData, isFormElement, isPlainObject } from '@mongez/supportive-is';
 import axios, {
   Axios,
   AxiosRequestConfig,
   AxiosResponse,
-  InternalAxiosRequestConfig,
-} from "axios";
+  type InternalAxiosRequestConfig,
+} from 'axios';
 import {
   EndpointConfigurations,
   EndpointEvent,
   RequestEndpointConfigurations,
-} from "./Endpoint.types";
+} from './Endpoint.types';
 
 export class Endpoint extends Axios {
   /**
@@ -32,7 +32,7 @@ export class Endpoint extends Axios {
     cacheOptions: {
       ttl: 5 * 60, // 5 minutes
     },
-    putMethodKey: "_method",
+    putMethodKey: '_method',
     ...(axios.defaults as any),
   };
 
@@ -76,7 +76,7 @@ export class Endpoint extends Axios {
   /**
    * Add axios interceptors
    */
-  protected addInterceptors() {
+  protected addInterceptors(): void {
     this.addRequestInterceptors();
     this.addResponseInterceptors();
   }
@@ -84,80 +84,78 @@ export class Endpoint extends Axios {
   /**
    * Add request interceptors
    */
-  protected addRequestInterceptors() {
-    this.interceptors.request.use(
-      (requestConfig: InternalAxiosRequestConfig) => {
-        // A workaround for put requests to be sent as post request
-        // this will allow us to upload images
-        const headers = requestConfig.headers || {};
+  protected addRequestInterceptors(): void {
+    this.interceptors.request.use((requestConfig: InternalAxiosRequestConfig) => {
+      // A workaround for put requests to be sent as post request
+      // this will allow us to upload images
+      const headers = requestConfig.headers || {};
 
-        const isPutRequest = requestConfig.method?.toUpperCase() === "PUT";
+      const isPutRequest = requestConfig.method?.toUpperCase() === 'PUT';
 
-        let data = requestConfig.data;
+      let data: any = requestConfig.data;
 
-        if (isFormElement(data)) {
-          data = new FormData(data);
-        }
-
-        if (isPutRequest && this.configurations.putToPost) {
-          requestConfig.method = "POST";
-          if (isFormData(data)) {
-            data.append(this.configurations.putMethodKey, "PUT");
-          } else if (isPlainObject(data) && this.configurations.putMethodKey) {
-            data = set(data, this.configurations.putMethodKey, "PUT");
-          }
-        }
-
-        if (isPlainObject(data)) {
-          headers!["Content-Type"] = "Application/json";
-
-          data = JSON.stringify(data);
-        }
-
-        requestConfig.data = data;
-
-        const authHeader = this.configurations.setAuthorizationHeader;
-
-        if (authHeader && !headers?.Authorization) {
-          if (typeof authHeader === "function") {
-            const authorizationValue = authHeader(requestConfig);
-
-            if (authorizationValue) {
-              headers.Authorization = authorizationValue;
-            }
-          } else {
-            headers.Authorization = authHeader;
-          }
-        }
-
-        requestConfig.headers = headers;
-
-        if (!requestConfig.signal) {
-          this.lastRequest = new AbortController();
-
-          requestConfig.signal = this.lastRequest.signal;
-        }
-
-        // trigger event of sending ajax request
-        this.trigger("sending", requestConfig);
-
-        return requestConfig;
+      if (isFormElement(data)) {
+        data = new FormData(data);
       }
-    );
+
+      if (isPutRequest && this.configurations.putToPost) {
+        requestConfig.method = 'POST';
+        if (isFormData(data)) {
+          data.append(this.configurations.putMethodKey, 'PUT');
+        } else if (isPlainObject(data) && this.configurations.putMethodKey) {
+          data = set(data, this.configurations.putMethodKey, 'PUT');
+        }
+      }
+
+      if (isPlainObject(data)) {
+        headers!['Content-Type'] = 'Application/json';
+
+        data = JSON.stringify(data);
+      }
+
+      requestConfig.data = data;
+
+      const authHeader = this.configurations.setAuthorizationHeader;
+
+      if (authHeader && !headers?.Authorization) {
+        if (typeof authHeader === 'function') {
+          const authorizationValue = authHeader(requestConfig);
+
+          if (authorizationValue) {
+            headers.Authorization = authorizationValue;
+          }
+        } else {
+          headers.Authorization = authHeader;
+        }
+      }
+
+      requestConfig.headers = headers;
+
+      if (!requestConfig.signal) {
+        this.lastRequest = new AbortController();
+
+        requestConfig.signal = this.lastRequest.signal;
+      }
+
+      // trigger event of sending ajax request
+      this.trigger('sending', requestConfig);
+
+      return requestConfig;
+    });
   }
 
   /**
    * Add response interceptors
    */
-  protected addResponseInterceptors() {
+  protected addResponseInterceptors(): void {
     this.interceptors.response.use(
       (response) => {
         if (response.config.signal === this.lastRequest?.signal) {
           this.lastRequest = undefined;
         }
 
-        this.trigger("complete", response);
-        this.trigger("success", response);
+        this.trigger('complete', response);
+        this.trigger('success', response);
 
         return response;
       },
@@ -166,11 +164,11 @@ export class Endpoint extends Axios {
           this.lastRequest = undefined;
         }
 
-        this.trigger("complete", error.response);
-        this.trigger("error", error.response);
+        this.trigger('complete', error.response);
+        this.trigger('error', error.response);
 
         return Promise.reject(error);
-      }
+      },
     );
   }
 
@@ -179,12 +177,10 @@ export class Endpoint extends Axios {
    */
   public get<T = any, R = AxiosResponse<T>>(
     url: string,
-    options?: RequestEndpointConfigurations
+    options?: RequestEndpointConfigurations,
   ): Promise<R> {
     const request: Promise<R> = new Promise(async (resolve, reject) => {
-      const isCacheable =
-        options?.cache ||
-        (this.configurations.cache && options?.cache !== false);
+      const isCacheable = options?.cache || (this.configurations.cache && options?.cache !== false);
 
       if (isCacheable) {
         const cacheConfigurations = {
@@ -194,25 +190,35 @@ export class Endpoint extends Axios {
 
         const cacheDriver = cacheConfigurations.driver;
 
-        const cacheKey =
-          cacheConfigurations.key ??
-          this.configurations.cacheOptions?.generateKey
-            ? this.configurations?.cacheOptions?.generateKey?.(
-                url,
-                options?.params
-              )
-            : this.getCacheKey(url, options?.params);
+        if (!cacheConfigurations.key) {
+          cacheConfigurations.key =
+            this.configurations.cacheOptions?.generateKey?.(url, options?.params) ||
+            this.getCacheKey(url, options?.params);
+        }
+
+        const cacheKey = cacheConfigurations.key;
 
         const response = await cacheDriver?.get(cacheKey);
+
+        const expiresAfter = cacheConfigurations.ttl ?? cacheConfigurations.expiresAfter;
+
+        const expireTime: number | false =
+          expiresAfter !== undefined
+            ? expiresAfter
+            : ((getCacheConfig('expiresAfter') || 0) as number);
+
+        const expiresAt = expireTime ? new Date().getTime() + expireTime * 1000 : undefined;
+
+        console.log({ expiresAt });
 
         if (response) {
           resolve(response as any);
         } else {
           super
             .get(url, options)
-            .then((response) => {
-              if (isCacheable) {
-                cacheDriver?.set(
+            .then((response: AxiosResponse<T>) => {
+              if (isCacheable && cacheDriver) {
+                cacheDriver.set(
                   cacheKey,
                   {
                     data: response.data,
@@ -220,7 +226,7 @@ export class Endpoint extends Axios {
                     statusText: response.statusText,
                     headers: response.headers,
                   },
-                  cacheConfigurations.ttl ?? cacheConfigurations.expiresAfter
+                  cacheConfigurations.ttl ?? cacheConfigurations.expiresAfter,
                 );
               }
               resolve(response as any);
@@ -241,7 +247,7 @@ export class Endpoint extends Axios {
   /**
    * Get endpoint last request
    */
-  public getLastRequest() {
+  public getLastRequest(): AbortController | undefined {
     return this.lastRequest;
   }
 
@@ -253,33 +259,25 @@ export class Endpoint extends Axios {
       /**
        * Triggered when response is returned with error response
        */
-      onError: (
-        callback: (response: AxiosResponse) => void
-      ): EventSubscription => {
+      onError: (callback: (response: AxiosResponse) => void): EventSubscription => {
         return events.subscribe(`${this.eventNamespace}.error`, callback);
       },
       /**
        * Triggered when response is returned with success response
        */
-      onSuccess: (
-        callback: (response: AxiosResponse) => void
-      ): EventSubscription => {
+      onSuccess: (callback: (response: AxiosResponse) => void): EventSubscription => {
         return events.subscribe(`${this.eventNamespace}.success`, callback);
       },
       /**
        * Triggered when response is returned wether it is success or error response
        */
-      onComplete: (
-        callback: (response: AxiosResponse) => void
-      ): EventSubscription => {
+      onComplete: (callback: (response: AxiosResponse) => void): EventSubscription => {
         return events.subscribe(`${this.eventNamespace}.complete`, callback);
       },
       /**
        * Triggered before sending response
        */
-      beforeSending: (
-        callback: (config: AxiosRequestConfig) => void
-      ): EventSubscription => {
+      beforeSending: (callback: (config: AxiosRequestConfig) => void): EventSubscription => {
         return events.subscribe(`${this.eventNamespace}.sending`, callback);
       },
     };
@@ -288,18 +286,18 @@ export class Endpoint extends Axios {
   /**
    * Trigger the given event
    */
-  protected trigger(event: EndpointEvent, ...args: any[]) {
+  protected trigger(event: EndpointEvent, ...args: any[]): any {
     return events.trigger(`${this.eventNamespace}.${event}`, ...args);
   }
 
   /**
    * Get cache key form the given path
    */
-  public getCacheKey(path: string, params?: any) {
+  public getCacheKey(path: string, params?: any): string {
     const key = `endpoint.${this.configurations.baseURL}.${path}`;
 
     if (params) {
-      return key + "." + JSON.stringify(params);
+      return `${key}.${JSON.stringify(params)}`;
     }
 
     return key;
@@ -308,14 +306,14 @@ export class Endpoint extends Axios {
   /**
    * Get configurations list
    */
-  public getConfigurations() {
+  public getConfigurations(): EndpointConfigurations {
     return this.configurations;
   }
 
   /**
    * Get config for the given key
    */
-  public getConfig(key: keyof EndpointConfigurations, defaultValue?: any) {
+  public getConfig(key: keyof EndpointConfigurations, defaultValue?: any): any {
     return this.configurations[key] ?? defaultValue;
   }
 }

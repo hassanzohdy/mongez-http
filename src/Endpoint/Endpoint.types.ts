@@ -1,5 +1,5 @@
-import { AxiosRequestConfig } from "axios";
-export type EndpointEvent = "sending" | "success" | "error" | "complete";
+import type { AxiosRequestConfig } from 'axios';
+export type EndpointEvent = 'sending' | 'success' | 'error' | 'complete';
 
 export type EndpointConfigurations = AxiosRequestConfig & {
   /**
@@ -66,16 +66,17 @@ export type EndpointConfigurations = AxiosRequestConfig & {
   publishKey?: string;
 };
 
-export type RequestEndpointConfigurations = Omit<
-  EndpointConfigurations,
-  "cacheOptions"
-> & {
+export type RequestEndpointConfigurations = Omit<EndpointConfigurations, 'cacheOptions'> & {
   /**
    * Cache options
    */
   cacheOptions?: {
     driver?: any;
+    /**
+     * @deprecated use `ttl` instead
+     */
     expiresAfter?: number;
+    ttl?: number;
     key?: string;
   };
 };

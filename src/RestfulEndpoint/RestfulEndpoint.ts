@@ -1,15 +1,15 @@
-import concatRoute from "@mongez/concat-route";
-import { AxiosRequestConfig, AxiosResponse } from "axios";
-import { getCurrentEndpoint } from "../current-endpoint";
-import { Endpoint } from "../Endpoint";
-import { HttpData, RestfulService } from "./RestfulEndpoint.types";
+import concatRoute from '@mongez/concat-route';
+import type { AxiosRequestConfig, AxiosResponse } from 'axios';
+import { getCurrentEndpoint } from '../current-endpoint';
+import { Endpoint } from '../Endpoint';
+import { HttpData, RestfulService } from './RestfulEndpoint.types';
 
 export class RestfulEndpoint implements RestfulService {
   /**
    * Set the main module route
    * i.e /users
    */
-  public route = "";
+  public route = '';
 
   /**
    * End point object
@@ -29,10 +29,7 @@ export class RestfulEndpoint implements RestfulService {
   /**
    * Fetch records from endpoint api
    */
-  public list(
-    params = this.listParams,
-    config: AxiosRequestConfig = {}
-  ): Promise<AxiosResponse> {
+  public list(params = this.listParams, config: AxiosRequestConfig = {}): Promise<AxiosResponse> {
     config.params = params;
 
     return this.endpoint.get(this.route, config);
@@ -44,7 +41,7 @@ export class RestfulEndpoint implements RestfulService {
   public get(
     id: number | string,
     params = {},
-    config: AxiosRequestConfig = {}
+    config: AxiosRequestConfig = {},
   ): Promise<AxiosResponse> {
     if (!config.params) {
       config.params = params;
@@ -61,11 +58,10 @@ export class RestfulEndpoint implements RestfulService {
   public publish(
     id: number | string,
     published: boolean | HttpData,
-    publishKey = this.endpoint.getConfig("publishKey", "published"),
-    config: AxiosRequestConfig = {}
+    publishKey = this.endpoint.getConfig('publishKey', 'published'),
+    config: AxiosRequestConfig = {},
   ): Promise<AxiosResponse> {
-    const data =
-      typeof published === "object" ? published : { [publishKey]: published };
+    const data = typeof published === 'object' ? published : { [publishKey]: published };
 
     return this.patch(this.path(id), data, config);
   }
@@ -73,10 +69,7 @@ export class RestfulEndpoint implements RestfulService {
   /**
    * Create new record
    */
-  public create(
-    data: HttpData,
-    config: AxiosRequestConfig = {}
-  ): Promise<AxiosResponse> {
+  public create(data: HttpData, config: AxiosRequestConfig = {}): Promise<AxiosResponse> {
     return this.endpoint.post(this.route, data, config);
   }
 
@@ -86,7 +79,7 @@ export class RestfulEndpoint implements RestfulService {
   public update(
     id: number | string,
     data: HttpData,
-    config: AxiosRequestConfig = {}
+    config: AxiosRequestConfig = {},
   ): Promise<AxiosResponse> {
     return this.endpoint.put(this.path(id), data, config);
   }
@@ -94,20 +87,14 @@ export class RestfulEndpoint implements RestfulService {
   /**
    * Delete existing record
    */
-  public delete(
-    id: number | string,
-    config: AxiosRequestConfig = {}
-  ): Promise<AxiosResponse> {
+  public delete(id: number | string, config: AxiosRequestConfig = {}): Promise<AxiosResponse> {
     return this.endpoint.delete(this.path(id), config);
   }
 
   /**
    * Delete multiple records
    */
-  public bulkDelete(
-    data,
-    config: AxiosRequestConfig = {}
-  ): Promise<AxiosResponse> {
+  public bulkDelete(data: any, config: AxiosRequestConfig = {}): Promise<AxiosResponse> {
     config.data = data;
     return this.endpoint.delete(this.path(), config);
   }
@@ -118,7 +105,7 @@ export class RestfulEndpoint implements RestfulService {
   public patch(
     id: number | string,
     data = {},
-    config: AxiosRequestConfig = {}
+    config: AxiosRequestConfig = {},
   ): Promise<AxiosResponse> {
     return this.endpoint.patch(this.path(id), data, config);
   }
@@ -126,7 +113,7 @@ export class RestfulEndpoint implements RestfulService {
   /**
    * Concatenate the given path with the base route
    */
-  public path(path: string | number = ""): string {
+  public path(path: string | number = ''): string {
     return concatRoute(this.route, String(path));
   }
 }
