@@ -1,11 +1,12 @@
 {
     "name": "@mongez/http",
-    "version": "2.2.9",
+    "version": "2.2.10",
     "description": "Powerful yet simple package for handling ajax requests",
     "main": "src/index.ts",
     "dependencies": {
         "@mongez/concat-route": "^1.0.0",
         "@mongez/events": "^2.1.0",
+        "@mongez/cache": "^1.2.4",
         "@mongez/reinforcements": "^2.3.8",
         "@mongez/supportive-is": "^2.0.0",
         "axios": "^1.5.0"
