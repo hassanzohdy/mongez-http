@@ -1,0 +1,257 @@
+# @mongez/http — Full Reference
+
+## Overview
+
+`@mongez/http` v3 is a zero-Axios, native-`fetch` HTTP client for TypeScript applications.
+It replaces the old Axios-based `Endpoint` + `RestfulEndpoint` with a cleaner architecture:
+
+- **`Http` class** — sends requests, manages config, interceptors, events
+- **`Resource` class** — RESTful CRUD helper built on top of Http
+- **`{data, error}` pattern** — every method returns a discriminated union; no try/catch noise
+- **`CancellablePromise`** — `.cancel()` and `.signal` on every returned promise
+- **`HttpError`** — structured error with status predicates
+
+Runtime dependency: `@mongez/concat-route` only.
+
+---
+
+## Http class
+
+### Constructor
+
+```ts
+new Http(config?: HttpConfig)
+```
+
+### HttpConfig
+
+```ts
+interface HttpConfig {
+  baseURL?: string
+  auth?: string | ((req: OutgoingRequest) => string | null | undefined)
+  putToPost?: boolean          // default false
+  putMethodKey?: string        // default "_method"
+  timeout?: number             // ms
+  headers?: Record<string, string>
+  cache?: boolean | HttpCacheConfig
+  retry?: HttpRetryConfig
+  publishKey?: string          // default "published"
+}
+```
+
+### Methods
+
+```ts
+// HTTP verbs — all return CancellablePromise<HttpResult<T>>
+get<T>(path, options?)
+post<T>(path, data?, options?)
+put<T>(path, data?, options?)
+patch<T>(path, data?, options?)
+delete<T>(path, options?)
+head(path, options?)
+
+// Extend config
+extend(overrides: HttpConfig): Http      // new instance, merged config
+getConfig(): Readonly<HttpConfig>
+
+// Interceptors
+before(fn: BeforeInterceptor): this
+after<T>(fn: AfterInterceptor<T>): this
+
+// Events
+on(event: string, handler: HttpEventHandler): this
+off(event: string, handler: HttpEventHandler): this
+```
+
+---
+
+## HttpResult<T>
+
+```ts
+type HttpResult<T> =
+  | { data: T;    error: null;      status: number;      response: Response }
+  | { data: null; error: HttpError; status: number|null; response: Response|null }
+```
+
+---
+
+## CancellablePromise<T>
+
+```ts
+type CancellablePromise<T> = Promise<T> & {
+  cancel(reason?: string): void
+  readonly signal: AbortSignal
+}
+```
+
+Factory: `makeCancellable(factory, externalSignal?)`
+
+---
+
+## RequestOptions
+
+```ts
+interface RequestOptions {
+  params?: HttpParams
+  headers?: Record<string, string>
+  signal?: AbortSignal
+  cache?: boolean | Omit<HttpCacheConfig,'driver'> & { driver?: CacheDriver }
+  cacheKey?: string
+  retry?: boolean | Partial<HttpRetryConfig>
+  throw?: boolean              // default false — throw HttpError instead of returning it
+  timeout?: number
+  data?: unknown               // body for DELETE-with-body
+}
+```
+
+---
+
+## HttpError
+
+```ts
+class HttpError extends Error {
+  status: number | null
+  body: unknown
+  response: Response | null
+  isAborted: boolean
+  isTimeout: boolean
+  isNetwork: boolean
+
+  isClientError(): boolean     // 4xx
+  isServerError(): boolean     // 5xx
+  isUnauthorized(): boolean    // 401
+  isForbidden(): boolean       // 403
+  isNotFound(): boolean        // 404
+  isValidationError(): boolean // 422
+  isRateLimited(): boolean     // 429
+  toJSON(): Record<string, unknown>
+}
+```
+
+---
+
+## Resource class
+
+```ts
+class Resource {
+  route: string
+  defaultListParams: HttpParams
+
+  list<T>(params?, options?): CancellablePromise<HttpResult<T>>
+  get<T>(id, options?): CancellablePromise<HttpResult<T>>
+  create<T>(data, options?): CancellablePromise<HttpResult<T>>
+  update<T>(id, data, options?): CancellablePromise<HttpResult<T>>
+  patch<T>(id, data, options?): CancellablePromise<HttpResult<T>>
+  delete<T>(id, options?): CancellablePromise<HttpResult<T>>
+  bulkDelete<T>(data, options?): CancellablePromise<HttpResult<T>>
+  publish<T>(id, published, publishKey?, options?): CancellablePromise<HttpResult<T>>
+  path(suffix?): string
+  useHttp(instance): this
+}
+```
+
+`http` getter is lazy — resolved from `getCurrentHttp()` on first request.
+
+---
+
+## CacheDriver
+
+```ts
+interface CacheDriver {
+  get<T = unknown>(key: string): Promise<T | null | undefined>
+  set(key: string, value: unknown, ttl?: number): Promise<void> | void
+  remove?(key: string): Promise<void> | void
+}
+```
+
+### HttpCacheConfig
+
+```ts
+interface HttpCacheConfig {
+  driver: CacheDriver
+  ttl?: number                           // default 300s
+  generateKey?: (url, params?) => string // default: baseURL + path + params JSON
+}
+```
+
+---
+
+## HttpRetryConfig
+
+```ts
+interface HttpRetryConfig {
+  attempts: number
+  delay: number                    // base ms
+  backoff?: boolean                // default true — delay * 2^attempt
+  retryOn?: number[]               // default [429, 500, 502, 503, 504]
+}
+```
+
+Network errors are always retried. Aborts and timeouts are never retried.
+
+---
+
+## Interceptors
+
+```ts
+// Before: modify outgoing request
+type BeforeInterceptor = (req: OutgoingRequest) =>
+  OutgoingRequest | void | Promise<OutgoingRequest | void>
+
+// After: transform successful result
+type AfterInterceptor<T> = (result: HttpResult<T>) =>
+  HttpResult<T> | void | Promise<HttpResult<T> | void>
+```
+
+---
+
+## Bootstrap
+
+```ts
+import { Http, setCurrentHttp } from '@mongez/http';
+
+const http = new Http({
+  baseURL: import.meta.env.VITE_API_URL,
+  auth: () => localStorage.getItem('token')
+    ? `Bearer ${localStorage.getItem('token')}`
+    : null,
+  retry: { attempts: 2, delay: 300 },
+});
+
+setCurrentHttp(http);
+export { http };
+```
+
+---
+
+## File map
+
+| File | Exports |
+|------|---------|
+| `src/Http.ts` | `Http` |
+| `src/HttpError.ts` | `HttpError` |
+| `src/Resource.ts` | `Resource` |
+| `src/Resource.types.ts` | `ResourceService` |
+| `src/cancellable.ts` | `CancellablePromise`, `makeCancellable` |
+| `src/current-http.ts` | `setCurrentHttp`, `getCurrentHttp` |
+| `src/Http.types.ts` | All shared types/interfaces |
+| `src/utils/params.ts` | `buildQueryString`, `appendParams` |
+| `src/utils/body.ts` | `prepareBody`, `parseBody` |
+| `src/index.ts` | Re-exports everything |
+
+---
+
+## Changelog
+
+### 3.0.0
+- Complete rewrite: native `fetch`, drop Axios
+- `{data, error}` result pattern
+- `CancellablePromise` on all methods
+- `HttpError` with typed predicates
+- `Resource` replaces `RestfulEndpoint` (fixes double-URL bug in `publish`)
+- Lazy `http` getter in Resource (fixes silent undefined)
+- Built-in caching (any CacheDriver)
+- Built-in retry with exponential backoff
+- Before/after interceptors
+- `Http.extend()` for scoped instances
+- `putToPost` for Laravel-style file uploads

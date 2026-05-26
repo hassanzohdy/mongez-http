@@ -1,0 +1,45 @@
+{
+  "name": "@mongez/http",
+  "version": "3.0.1",
+  "description": "Robust, fetch-based HTTP client for TypeScript. Native fetch, {data,error} result type, per-request abort, caching, interceptors, and a RestfulResource helper.",
+  "main": "src/index.ts",
+  "author": "hassanzohdy",
+  "license": "MIT",
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hassanzohdy/mongez-http"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "@mongez/concat-route": "^1.1.0"
+  },
+  "peerDependencies": {
+    "typescript": ">=5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "happy-dom": "^15.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "keywords": [
+    "http",
+    "fetch",
+    "rest",
+    "api",
+    "client",
+    "abort",
+    "typescript",
+    "mongez"
+  ]
+}
