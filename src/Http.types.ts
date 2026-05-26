@@ -149,6 +149,21 @@ export interface HttpConfig {
   /** Default headers merged into every request. */
   headers?: Record<string, string>;
 
+  /**
+   * Controls whether cookies and HTTP authentication are sent with requests.
+   *
+   * - `"same-origin"` *(default)* — cookies sent only to same-origin URLs.
+   * - `"include"` — cookies sent to all URLs, including cross-origin.
+   *   The server must respond with `Access-Control-Allow-Credentials: true`.
+   * - `"omit"` — cookies never sent.
+   *
+   * **Browser note:** `"include"` is required for cross-origin cookie-based auth.
+   * **Node.js note:** the native fetch cookie jar is not used; manage cookies
+   * manually via `headers: { Cookie: '...' }` and read `Set-Cookie` from
+   * `result.headers['set-cookie']`.
+   */
+  credentials?: RequestCredentials;
+
   /** Enable/configure response caching for GET requests. */
   cache?: boolean | HttpCacheConfig;
 
@@ -238,6 +253,12 @@ export interface RequestOptions {
 
   /** Per-request timeout override in ms. */
   timeout?: number;
+
+  /**
+   * Override the global `credentials` setting for this single request.
+   * See `HttpConfig.credentials` for full documentation.
+   */
+  credentials?: RequestCredentials;
 
   /** Request body — used for DELETE-with-body (bulkDelete) and similar. */
   data?: unknown;
