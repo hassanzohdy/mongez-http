@@ -306,10 +306,10 @@ export class Http {
       const mergedParams = this.config.params
         ? { ...this.config.params, ...options.params }
         : options.params;
-      const dedupeKey = appendParams(
-        joinUrl(this.config.baseURL ?? "", path),
-        mergedParams,
-      );
+      const rawUrl = joinUrl(this.config.baseURL ?? "", path);
+      const dedupeKey = this.config.dedupeKey
+        ? this.config.dedupeKey(rawUrl, mergedParams)
+        : appendParams(rawUrl, mergedParams);
 
       if (!this.inFlight.has(dedupeKey)) {
         const sharedController = new AbortController();
@@ -386,6 +386,68 @@ export class Http {
     if (config?.driver.clear) {
       await config.driver.clear();
     }
+  }
+
+  // ─── Concurrent request helpers ─────────────────────────────────────────────
+
+  /**
+   * Run multiple requests concurrently and collect every result in order.
+   * Cancelling the returned handle cancels all requests in the batch.
+   *
+   * Unlike `Promise.all`, individual requests still resolve to `{data, error}`
+   * even when one fails — they never throw. The batch itself resolves when
+   * all inner requests settle.
+   *
+   * @example
+   * const results = await http.all([
+   *   http.get<User[]>('/users'),
+   *   http.get<Post[]>('/posts'),
+   * ]);
+   * const [usersResult, postsResult] = results;
+   */
+  all<T>(requests: CancellablePromise<T>[]): CancellablePromise<T[]> {
+    const controller = new AbortController();
+    return Object.assign(Promise.all(requests), {
+      cancel: (reason?: string): void => {
+        controller.abort(reason ?? "cancelled");
+        for (const req of requests) req.cancel(reason ?? "cancelled");
+      },
+      get signal(): AbortSignal { return controller.signal; },
+    }) as unknown as CancellablePromise<T[]>;
+  }
+
+  /**
+   * Run multiple requests concurrently and return the result of whichever
+   * settles first. All other in-flight requests are cancelled immediately.
+   *
+   * Useful for mirror/fallback endpoints where you want the fastest response.
+   *
+   * @example
+   * const { data } = await http.race([
+   *   http.get('/cdn-us/data'),
+   *   http.get('/cdn-eu/data'),
+   * ]);
+   */
+  race<T>(requests: CancellablePromise<T>[]): CancellablePromise<T> {
+    const controller = new AbortController();
+
+    const cancelAll = (reason: string): void => {
+      for (const req of requests) req.cancel(reason);
+    };
+
+    // Cancel all losers once the first request settles.
+    const settled = Promise.race(requests).then(
+      (winner) => { cancelAll("race-finished"); return winner; },
+      (err)    => { cancelAll("race-finished"); return Promise.reject(err) as never; },
+    );
+
+    return Object.assign(settled, {
+      cancel: (reason?: string): void => {
+        controller.abort(reason ?? "cancelled");
+        cancelAll(reason ?? "cancelled");
+      },
+      get signal(): AbortSignal { return controller.signal; },
+    }) as unknown as CancellablePromise<T>;
   }
 
   // ─── Streaming ──────────────────────────────────────────────────────────────
@@ -471,6 +533,7 @@ export class Http {
             credentials: options.credentials ?? self.config.credentials,
             mode: options.mode ?? self.config.mode,
             redirect: options.redirect ?? self.config.redirect,
+            cache: options.fetchCache ?? self.config.fetchCache,
           });
         } catch {
           if (controller.signal.aborted) return; // cancelled — end silently
@@ -634,7 +697,7 @@ export class Http {
     method: HttpMethod | string,
     path: string,
     data: HttpData | undefined,
-    options: Pick<RequestOptions, "params" | "headers">,
+    options: RequestOptions,
     extraHeaders: Record<string, string> = {},
   ): Promise<OutgoingRequest> {
     const baseURL = this.config.baseURL ?? "";
@@ -645,7 +708,21 @@ export class Http {
       : options.params;
     const fullPath = appendParams(joinUrl(baseURL, path), mergedParams);
 
-    const { body, contentType } = prepareBody(data);
+    // ── Body serialization ────────────────────────────────────────────────────
+    // Use the custom serializer for plain objects/arrays. FormData, Blob,
+    // HTMLFormElement, and string pass through prepareBody unchanged.
+    const isPassthrough =
+      !data ||
+      data instanceof FormData ||
+      typeof data === "string" ||
+      (typeof HTMLFormElement !== "undefined" && data instanceof HTMLFormElement);
+
+    const { body, contentType } = (this.config.serializer && !isPassthrough)
+      ? (() => {
+          const r = this.config.serializer!(data);
+          return { body: r.body, contentType: r.contentType as string | undefined };
+        })()
+      : prepareBody(data);
 
     const headers: Record<string, string> = {
       ...(this.config.headers ?? {}),
@@ -670,7 +747,9 @@ export class Http {
 
     let req = outgoing;
     for (const interceptor of this.beforeInterceptors) {
-      const modified = await interceptor(req);
+      // Pass the full original options as the second argument so interceptors
+      // can inspect params, timeout, responseType, etc.
+      const modified = await interceptor(req, options as Readonly<RequestOptions>);
       if (modified) req = modified;
     }
 
@@ -847,6 +926,7 @@ export class Http {
         mode: options.mode ?? this.config.mode,
         keepalive: options.keepalive ?? this.config.keepalive,
         redirect: options.redirect ?? this.config.redirect,
+        cache: options.fetchCache ?? this.config.fetchCache,
         ...extraInit,
       } as RequestInit);
     } catch (err) {

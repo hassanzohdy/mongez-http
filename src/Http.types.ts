@@ -75,6 +75,21 @@ export interface OutgoingRequest {
 
 export type BeforeInterceptor = (
   req: OutgoingRequest,
+  /**
+   * The original per-request options passed to `http.get/post/…` or `http.request()`.
+   * Read-only snapshot — mutating it has no effect on the in-flight request.
+   *
+   * Use this to inspect `params`, `timeout`, `responseType`, or any other option
+   * that was supplied by the caller but is not yet reflected in `req.url` / `req.headers`.
+   *
+   * @example
+   * http.before((req, options) => {
+   *   if (options.timeout && options.timeout < 1000) {
+   *     console.warn('Very short timeout:', options.timeout);
+   *   }
+   * });
+   */
+  options: Readonly<RequestOptions>,
 ) => OutgoingRequest | void | Promise<OutgoingRequest | void>;
 
 // ─── After interceptor context ────────────────────────────────────────────────
@@ -242,6 +257,61 @@ export interface HttpConfig {
    * @default "published"
    */
   publishKey?: string;
+
+  /**
+   * Custom body serializer. Replaces the default `JSON.stringify` for plain
+   * object/array payloads. Has no effect on `FormData`, `Blob`, or `string`
+   * bodies — those are always passed through unchanged.
+   *
+   * Use this to send MessagePack, CBOR, protobuf, or any other wire format
+   * without wrapping every call site manually.
+   *
+   * @example
+   * import { encode } from '@msgpack/msgpack';
+   * const http = new Http({
+   *   baseURL,
+   *   serializer: (data) => ({
+   *     body: encode(data),
+   *     contentType: 'application/msgpack',
+   *   }),
+   * });
+   */
+  serializer?: (data: unknown) => { body: BodyInit; contentType: string };
+
+  /**
+   * Fetch-native cache directive (`RequestCache`), distinct from the
+   * application-level `cache` option (which manages an external cache driver).
+   *
+   * - `"default"` *(browser default)* — honour the HTTP cache per standard rules.
+   * - `"no-store"` — bypass the browser cache entirely; never read or write.
+   * - `"reload"` — ignore any cached copy; update the cache after the request.
+   * - `"no-cache"` — revalidate with the server before using a cached copy.
+   * - `"force-cache"` — use a cached response even if stale.
+   * - `"only-if-cached"` — fail if nothing is cached.
+   *
+   * Forwarded directly to every underlying `fetch()` call.
+   *
+   * @example
+   * const http = new Http({ baseURL, fetchCache: 'no-store' }); // bypass browser cache
+   */
+  fetchCache?: RequestCache;
+
+  /**
+   * Custom deduplication key generator for concurrent GET requests.
+   *
+   * By default the dedup key is the full URL with all query params appended,
+   * so two calls with different `params` use different in-flight slots.
+   * Override to share a single underlying fetch across calls that differ
+   * only in params, or implement any other custom keying strategy.
+   *
+   * @param url   The fully-resolved URL (baseURL + path, no query string).
+   * @param params The merged params object (global defaults + per-request).
+   *
+   * @example
+   * // Deduplicate on URL only — page=1 and page=2 share one in-flight fetch.
+   * const http = new Http({ baseURL, dedupeKey: (url) => url });
+   */
+  dedupeKey?: (url: string, params?: HttpParams) => string;
 }
 
 // ─── Response type ───────────────────────────────────────────────────────────
@@ -421,4 +491,10 @@ export interface RequestOptions {
    * Safari 17.4+). Environments without it fall back to no progress events.
    */
   onUploadProgress?: (event: UploadProgressEvent) => void;
+
+  /**
+   * Per-request override of the fetch-native cache directive.
+   * See `HttpConfig.fetchCache` for full documentation.
+   */
+  fetchCache?: RequestCache;
 }

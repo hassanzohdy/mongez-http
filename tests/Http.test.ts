@@ -888,5 +888,250 @@ describe("Http", () => {
     });
   });
 
+  // ── serializer (item 11) ─────────────────────────────────────────────────────
+
+  describe("HttpConfig.serializer", () => {
+    it("uses custom serializer for plain object data", async () => {
+      const client = new Http({
+        baseURL: "https://api.example.com",
+        serializer: (data) => ({
+          body: `CUSTOM:${JSON.stringify(data)}`,
+          contentType: "application/custom",
+        }),
+      });
+      const spy = mockFetch({ ok: true });
+      await client.post("/data", { x: 1 });
+      const [, init] = spy.mock.calls[0]!;
+      expect((init as RequestInit).body).toBe('CUSTOM:{"x":1}');
+      expect((init as RequestInit).headers as Record<string, string>).toMatchObject({
+        "Content-Type": "application/custom",
+      });
+    });
+
+    it("skips serializer for FormData (passes through unchanged)", async () => {
+      const serializerSpy = vi.fn(() => ({ body: "nope", contentType: "x" }));
+      const client = new Http({
+        baseURL: "https://api.example.com",
+        serializer: serializerSpy,
+      });
+      const spy = mockFetch({ ok: true });
+      const fd = new FormData();
+      fd.append("name", "Alice");
+      await client.post("/upload", fd);
+      expect(serializerSpy).not.toHaveBeenCalled();
+      const [, init] = spy.mock.calls[0]!;
+      expect((init as RequestInit).body).toBeInstanceOf(FormData);
+    });
+
+    it("skips serializer when data is a string", async () => {
+      const serializerSpy = vi.fn(() => ({ body: "nope", contentType: "x" }));
+      const client = new Http({
+        baseURL: "https://api.example.com",
+        serializer: serializerSpy,
+      });
+      mockFetch({ ok: true });
+      await client.post("/text", "raw body");
+      expect(serializerSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── http.all() / http.race() (item 12) ───────────────────────────────────────
+
+  describe("http.all()", () => {
+    it("fires all requests and returns all results in order", async () => {
+      vi.spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ a: 1 }), { status: 200, headers: { "Content-Type": "application/json" } }),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ b: 2 }), { status: 200, headers: { "Content-Type": "application/json" } }),
+        );
+
+      const results = await http.all([
+        http.get("/a"),
+        http.get("/b"),
+      ]);
+
+      expect(results).toHaveLength(2);
+      expect(results[0]!.data).toEqual({ a: 1 });
+      expect(results[1]!.data).toEqual({ b: 2 });
+    });
+
+    it("cancel() cancels all inner requests", async () => {
+      vi.spyOn(globalThis, "fetch").mockImplementation(
+        () => new Promise<Response>(() => {}),
+      );
+
+      const r1 = http.get("/slow-all-a");
+      const r2 = http.get("/slow-all-b");
+      const batch = http.all([r1, r2]);
+
+      batch.cancel("batch-aborted");
+
+      const results = await batch;
+      expect(results[0]!.error!.isAborted).toBe(true);
+      expect(results[1]!.error!.isAborted).toBe(true);
+    });
+
+    it("exposes a signal that reflects the cancel state", () => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+        new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } }),
+      );
+      const batch = http.all([http.get("/x")]);
+      expect(batch.signal.aborted).toBe(false);
+      batch.cancel();
+      expect(batch.signal.aborted).toBe(true);
+    });
+  });
+
+  describe("http.race()", () => {
+    it("returns the first result to arrive and cancels others", async () => {
+      vi.spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ winner: true }), { status: 200, headers: { "Content-Type": "application/json" } }),
+        )
+        // The second mock never resolves — simulates a slow mirror.
+        .mockImplementationOnce(() => new Promise<Response>(() => {}));
+
+      const result = await http.race([
+        http.get("/fast-mirror"),
+        http.get("/slow-mirror"),
+      ]);
+
+      expect(result.data).toEqual({ winner: true });
+    });
+
+    it("exposes a cancel() that aborts all inner requests", () => {
+      vi.spyOn(globalThis, "fetch").mockImplementation(
+        () => new Promise<Response>(() => {}),
+      );
+
+      const r1 = http.get("/race-a");
+      const r2 = http.get("/race-b");
+      const race = http.race([r1, r2]);
+
+      expect(race.signal.aborted).toBe(false);
+      race.cancel("left page");
+      expect(race.signal.aborted).toBe(true);
+    });
+  });
+
+  // ── fetchCache option (item 13) ───────────────────────────────────────────────
+
+  describe("fetchCache option", () => {
+    it("forwards global fetchCache to fetch", async () => {
+      const client = new Http({ baseURL: "https://api.example.com", fetchCache: "no-store" });
+      const spy = mockFetch({});
+      await client.get("/test");
+      const [, init] = spy.mock.calls[0]!;
+      expect((init as RequestInit).cache).toBe("no-store");
+    });
+
+    it("per-request fetchCache overrides global", async () => {
+      const client = new Http({ baseURL: "https://api.example.com", fetchCache: "default" });
+      const spy = mockFetch({});
+      await client.get("/test", { fetchCache: "reload" });
+      const [, init] = spy.mock.calls[0]!;
+      expect((init as RequestInit).cache).toBe("reload");
+    });
+
+    it("fetchCache is undefined when not set (fetch uses its own default)", async () => {
+      const spy = mockFetch({});
+      await http.get("/test");
+      const [, init] = spy.mock.calls[0]!;
+      // When neither global nor per-request fetchCache is set, the value
+      // should be undefined so the browser uses its own default behaviour.
+      expect((init as RequestInit).cache).toBeUndefined();
+    });
+  });
+
+  // ── dedupeKey customization (item 14) ────────────────────────────────────────
+
+  describe("dedupeKey customization", () => {
+    it("uses custom dedupeKey to share one fetch for different params on the same URL", async () => {
+      const client = new Http({
+        baseURL: "https://api.example.com",
+        // Deduplicate on URL only — different params still share one in-flight request.
+        dedupeKey: (url) => url,
+      });
+      const spy = mockFetch({ data: [] });
+
+      const [r1, r2] = await Promise.all([
+        client.get("/users", { params: { page: 1 } }),
+        client.get("/users", { params: { page: 2 } }),
+      ]);
+
+      // Only one real fetch despite different params.
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(r1.data).toEqual({ data: [] });
+      expect(r2.data).toEqual({ data: [] });
+    });
+
+    it("without custom dedupeKey, different params produce separate fetches", async () => {
+      const spy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } }),
+      );
+
+      await Promise.all([
+        http.get("/items", { params: { page: 1 } }),
+        http.get("/items", { params: { page: 2 } }),
+      ]);
+
+      // Default dedup key includes params, so these are treated as separate requests.
+      expect(spy).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // ── before interceptor options argument (item 15) ────────────────────────────
+
+  describe("before interceptor options argument", () => {
+    it("receives per-request options as the second argument", async () => {
+      mockFetch({});
+      let capturedOpts: Record<string, unknown> | null = null;
+
+      http.before((_req, opts) => {
+        capturedOpts = opts as Record<string, unknown>;
+      });
+
+      await http.get("/test", { params: { page: 1 }, timeout: 5000 });
+
+      expect(capturedOpts).not.toBeNull();
+      expect(capturedOpts!["params"]).toEqual({ page: 1 });
+      expect(capturedOpts!["timeout"]).toBe(5000);
+    });
+
+    it("allows before interceptor to conditionally modify request based on options", async () => {
+      const spy = mockFetch({});
+
+      http.before((req, opts) => {
+        // Add a debug header only for requests with a timeout.
+        if ((opts as { timeout?: number }).timeout) {
+          return { ...req, headers: { ...req.headers, "X-Has-Timeout": "yes" } };
+        }
+      });
+
+      await http.get("/timed", { timeout: 10000 });
+
+      const [, init] = spy.mock.calls[0]!;
+      expect((init as RequestInit).headers as Record<string, string>).toMatchObject({
+        "X-Has-Timeout": "yes",
+      });
+    });
+
+    it("before interceptor with only one param still works (backward compat)", async () => {
+      const spy = mockFetch({});
+
+      // A function that takes only req (no options) must still be accepted.
+      http.before((req) => ({ ...req, headers: { ...req.headers, "X-Legacy": "1" } }));
+
+      await http.get("/legacy");
+
+      const [, init] = spy.mock.calls[0]!;
+      expect((init as RequestInit).headers as Record<string, string>).toMatchObject({
+        "X-Legacy": "1",
+      });
+    });
+  });
+
   // ── extend() ─────────────────────────────────────────────────────────────────
 });
