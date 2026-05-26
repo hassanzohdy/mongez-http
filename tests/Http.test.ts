@@ -375,6 +375,121 @@ describe("Http", () => {
     });
   });
 
+  // ── responseType ─────────────────────────────────────────────────────────────
+
+  describe("responseType", () => {
+    it("text: returns raw string regardless of Content-Type", async () => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+        new Response('{"id":1}', {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+      const { data } = await http.get("/raw", { responseType: "text" });
+      expect(data).toBe('{"id":1}');
+    });
+
+    it("json: parses body as JSON regardless of Content-Type", async () => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+        new Response('{"id":2}', {
+          status: 200,
+          headers: { "Content-Type": "text/plain" },
+        }),
+      );
+      const { data } = await http.get("/data", { responseType: "json" });
+      expect(data).toEqual({ id: 2 });
+    });
+
+    it("blob: returns a Blob instance", async () => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+        new Response(new Uint8Array([1, 2, 3]).buffer, {
+          status: 200,
+          headers: { "Content-Type": "image/png" },
+        }),
+      );
+      const { data } = await http.get("/image.png", { responseType: "blob" });
+      expect(data).toBeInstanceOf(Blob);
+    });
+
+    it("arrayBuffer: returns an ArrayBuffer", async () => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+        new Response(new Uint8Array([10, 20, 30]).buffer, {
+          status: 200,
+          headers: { "Content-Type": "application/octet-stream" },
+        }),
+      );
+      const { data } = await http.get("/binary", { responseType: "arrayBuffer" });
+      expect(data).toBeInstanceOf(ArrayBuffer);
+    });
+  });
+
+  // ── onDownloadProgress ────────────────────────────────────────────────────────
+
+  describe("onDownloadProgress", () => {
+    it("fires callback with loaded/total/percent as chunks arrive", async () => {
+      const payload = JSON.stringify({ users: [1, 2, 3] });
+      const encoded = new TextEncoder().encode(payload);
+      const half = Math.floor(encoded.length / 2);
+      const chunk1 = encoded.slice(0, half);
+      const chunk2 = encoded.slice(half);
+
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(chunk1);
+              controller.enqueue(chunk2);
+              controller.close();
+            },
+          }),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              "Content-Length": String(encoded.length),
+            },
+          },
+        ),
+      );
+
+      const events: { loaded: number; total: number | null }[] = [];
+      const { data, error } = await http.get("/users", {
+        onDownloadProgress: (e) => events.push({ loaded: e.loaded, total: e.total }),
+      });
+
+      expect(error).toBeNull();
+      expect(data).toEqual({ users: [1, 2, 3] });
+      expect(events.length).toBeGreaterThanOrEqual(1);
+      expect(events[events.length - 1]!.loaded).toBe(encoded.length);
+      expect(events[0]!.total).toBe(encoded.length);
+    });
+
+    it("total is null when Content-Length is absent", async () => {
+      const encoded = new TextEncoder().encode("hello");
+
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(encoded);
+              controller.close();
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "text/plain" } },
+        ),
+      );
+
+      const events: { total: number | null; percent: number | null }[] = [];
+      await http.get("/text", {
+        responseType: "text",
+        onDownloadProgress: (e) => events.push({ total: e.total, percent: e.percent }),
+      });
+
+      expect(events[0]!.total).toBeNull();
+      expect(events[0]!.percent).toBeNull();
+    });
+  });
+
   // ── extend() ─────────────────────────────────────────────────────────────────
 
   describe("extend()", () => {

@@ -140,6 +140,52 @@ export interface HttpConfig {
   publishKey?: string;
 }
 
+// ─── Response type ───────────────────────────────────────────────────────────
+
+/**
+ * Controls how the response body is decoded.
+ * Default: auto-detect from Content-Type (json → JSON, otherwise text).
+ */
+export type ResponseType = "json" | "text" | "blob" | "arrayBuffer";
+
+// ─── Download progress ───────────────────────────────────────────────────────
+
+export interface DownloadProgressEvent {
+  /** Bytes received so far. */
+  loaded: number;
+  /** Total bytes expected. null when the server omits Content-Length. */
+  total: number | null;
+  /** 0–100, or null when total is unknown. */
+  percent: number | null;
+}
+
+// ─── Streaming ───────────────────────────────────────────────────────────────
+
+/**
+ * How each line of a streamed response is parsed.
+ * - "sse"    — strips "data: " prefix, skips [DONE] and empty lines, JSON-parses remainder
+ * - "ndjson" — skips empty lines, JSON-parses each line
+ */
+export type StreamFormat = "sse" | "ndjson";
+
+export interface StreamRequestOptions
+  extends Omit<
+    RequestOptions,
+    "data" | "responseType" | "onDownloadProgress" | "cache" | "retry"
+  > {
+  /** HTTP method. Default: "GET". Use "POST" for chat-style APIs. */
+  method?: HttpMethod;
+  /** Request body for streaming POST/PUT. */
+  data?: HttpData;
+  /** Line parsing strategy. Default: "sse". */
+  format?: StreamFormat;
+  /**
+   * Custom line parser. Return undefined to skip a line.
+   * When provided, overrides the built-in SSE / NDJSON parsers.
+   */
+  parseLine?: (line: string) => unknown;
+}
+
 // ─── Per-request options ─────────────────────────────────────────────────────
 
 export interface RequestOptions {
@@ -173,4 +219,16 @@ export interface RequestOptions {
 
   /** Request body — used for DELETE-with-body (bulkDelete) and similar. */
   data?: unknown;
+
+  /**
+   * How to decode the response body.
+   * Default: auto-detect from Content-Type (json or text).
+   */
+  responseType?: ResponseType;
+
+  /**
+   * Called each time a chunk arrives.
+   * When set, the body is read as a stream instead of buffered at once.
+   */
+  onDownloadProgress?: (event: DownloadProgressEvent) => void;
 }

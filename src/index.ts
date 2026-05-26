@@ -6,8 +6,8 @@ export { Resource } from "./Resource";
 // ─── Current instance ─────────────────────────────────────────────────────────
 export { getCurrentHttp, setCurrentHttp } from "./current-http";
 
-// ─── Cancellable promise ──────────────────────────────────────────────────────
-export type { CancellablePromise } from "./cancellable";
+// ─── Cancellable promise / iterable ──────────────────────────────────────────
+export type { CancellableAsyncIterable, CancellablePromise } from "./cancellable";
 export { makeCancellable } from "./cancellable";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -15,6 +15,7 @@ export type {
   AfterInterceptor,
   BeforeInterceptor,
   CacheDriver,
+  DownloadProgressEvent,
   HttpCacheConfig,
   HttpConfig,
   HttpData,
@@ -27,6 +28,9 @@ export type {
   HttpRetryConfig,
   OutgoingRequest,
   RequestOptions,
+  ResponseType,
+  StreamFormat,
+  StreamRequestOptions,
 } from "./Http.types";
 
 export type { ResourceService } from "./Resource.types";

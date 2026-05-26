@@ -13,21 +13,19 @@ import type {
   HttpRetryConfig,
   OutgoingRequest,
   RequestOptions,
+  StreamFormat,
+  StreamRequestOptions,
 } from "./Http.types";
 import { HttpError } from "./HttpError";
-import { type CancellablePromise, makeCancellable } from "./cancellable";
+import { type CancellableAsyncIterable, type CancellablePromise, makeCancellable } from "./cancellable";
 import { appendParams } from "./utils/params";
-import { parseBody, prepareBody } from "./utils/body";
+import { parseBody, prepareBody, readBodyWithProgress } from "./utils/body";
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
  * Join a base URL (may include protocol + host) with a path segment.
- * Unlike concatRoute, this preserves the protocol scheme.
- *
- * Examples:
- *   joinUrl('https://api.example.com', '/users')  → 'https://api.example.com/users'
- *   joinUrl('https://api.example.com/', '/users') → 'https://api.example.com/users'
- *   joinUrl('', '/users')                         → '/users'
+ * Preserves the protocol scheme — unlike concatRoute which treats everything as a path.
  */
 function joinUrl(base: string, path: string): string {
   if (!base) return path;
@@ -44,6 +42,38 @@ function sleep(ms: number): Promise<void> {
 function buildCacheKey(url: string, params?: HttpParams): string {
   const qs = params ? JSON.stringify(params) : "";
   return `http:${url}${qs ? `:${qs}` : ""}`;
+}
+
+/**
+ * Parse a single line from a stream according to the requested format.
+ * Returns undefined to signal "skip this line".
+ */
+function parseStreamLine<T>(
+  line: string,
+  format: StreamFormat,
+  customParser?: (line: string) => unknown,
+): T | undefined {
+  if (customParser) return customParser(line) as T | undefined;
+
+  if (format === "sse") {
+    if (!line.startsWith("data:")) return undefined;
+    const data = line.slice(5).trim();
+    if (!data || data === "[DONE]") return undefined;
+    try {
+      return JSON.parse(data) as T;
+    } catch {
+      return data as unknown as T;
+    }
+  }
+
+  // ndjson
+  const trimmed = line.trim();
+  if (!trimmed) return undefined;
+  try {
+    return JSON.parse(trimmed) as T;
+  } catch {
+    return trimmed as unknown as T;
+  }
 }
 
 // ─── Http ─────────────────────────────────────────────────────────────────────
@@ -148,6 +178,186 @@ export class Http {
 
   head(path: string, options?: RequestOptions): CancellablePromise<HttpResult<null>> {
     return this.request<null>("HEAD", path, undefined, options);
+  }
+
+  // ─── Streaming ──────────────────────────────────────────────────────────────
+
+  /**
+   * Open a streaming connection and yield parsed chunks as an async iterable.
+   *
+   * Supports Server-Sent Events (SSE) and newline-delimited JSON (NDJSON).
+   * Use `.cancel()` to abort the stream from outside the loop.
+   *
+   * @example
+   * // OpenAI-style SSE
+   * for await (const chunk of http.stream<ChatChunk>('/chat', {
+   *   method: 'POST',
+   *   data: { messages },
+   * })) {
+   *   process(chunk);
+   * }
+   *
+   * @example
+   * // NDJSON (e.g. Docker logs)
+   * for await (const line of http.stream('/containers/logs', { format: 'ndjson' })) {
+   *   console.log(line);
+   * }
+   */
+  stream<T = unknown>(
+    path: string,
+    options: StreamRequestOptions = {},
+  ): CancellableAsyncIterable<T> {
+    const controller = new AbortController();
+
+    // Forward any external signal into our controller.
+    if (options.signal) {
+      const ext = options.signal;
+      if (ext.aborted) {
+        controller.abort(ext.reason);
+      } else {
+        ext.addEventListener("abort", () => controller.abort(ext.reason), { once: true });
+      }
+    }
+
+    const format = options.format ?? "sse";
+    const self = this;
+
+    async function* generator(): AsyncGenerator<T> {
+      const baseURL = self.config.baseURL ?? "";
+      const fullPath = appendParams(joinUrl(baseURL, path), options.params);
+
+      const { body, contentType } = prepareBody(options.data);
+
+      const headers: Record<string, string> = {
+        ...(self.config.headers ?? {}),
+        ...(options.headers ?? {}),
+      };
+
+      if (contentType && !headers["Content-Type"]) {
+        headers["Content-Type"] = contentType;
+      }
+
+      // Signal to the server that we want a streaming response.
+      if (!headers["Accept"]) {
+        headers["Accept"] = "text/event-stream, application/x-ndjson, */*";
+      }
+
+      const outgoing: OutgoingRequest = {
+        method: options.method ?? "GET",
+        url: fullPath,
+        headers,
+        body,
+      };
+
+      const authValue =
+        typeof self.config.auth === "function"
+          ? self.config.auth(outgoing)
+          : self.config.auth;
+
+      if (authValue) {
+        headers["Authorization"] = authValue;
+      }
+
+      // Run before-interceptors.
+      let req = outgoing;
+      for (const interceptor of self.beforeInterceptors) {
+        const modified = await interceptor(req);
+        if (modified) req = modified;
+      }
+
+      self.emit("request", { request: req });
+
+      // ── Fetch ───────────────────────────────────────────────────────────────
+      let response: Response;
+      try {
+        response = await fetch(req.url, {
+          method: req.method,
+          headers: req.headers,
+          body: req.body,
+          signal: controller.signal,
+        });
+      } catch {
+        if (controller.signal.aborted) return; // cancelled — end silently
+        throw new HttpError({
+          message: "Stream network error",
+          isNetwork: true,
+        });
+      }
+
+      if (!response.ok) {
+        const errorBody = await parseBody(response).catch(() => null);
+        throw new HttpError({
+          message: `HTTP ${response.status} ${response.statusText}`,
+          status: response.status,
+          body: errorBody,
+          response,
+        });
+      }
+
+      // ── Read line-by-line ────────────────────────────────────────────────────
+      const reader = response.body?.getReader();
+      if (!reader) return;
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      try {
+        while (true) {
+          let readResult: ReadableStreamReadResult<Uint8Array>;
+          try {
+            readResult = await reader.read();
+          } catch {
+            // Aborted while reading — end silently.
+            if (controller.signal.aborted) return;
+            throw new HttpError({ message: "Stream read error", isNetwork: true });
+          }
+
+          const { done, value } = readResult;
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+
+          // Split on newlines; keep the last (potentially incomplete) fragment.
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+
+          for (const line of lines) {
+            const parsed = parseStreamLine<T>(
+              line,
+              format,
+              options.parseLine as ((l: string) => T | undefined) | undefined,
+            );
+            if (parsed !== undefined) yield parsed;
+          }
+        }
+
+        // Flush any remaining buffered content.
+        if (buffer.trim()) {
+          const parsed = parseStreamLine<T>(
+            buffer,
+            format,
+            options.parseLine as ((l: string) => T | undefined) | undefined,
+          );
+          if (parsed !== undefined) yield parsed;
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    }
+
+    const gen = generator();
+
+    return {
+      [Symbol.asyncIterator](): AsyncIterator<T> {
+        return gen;
+      },
+      cancel(reason?: string): void {
+        controller.abort(reason ?? "cancelled");
+      },
+      get signal(): AbortSignal {
+        return controller.signal;
+      },
+    };
   }
 
   // ─── Core request ───────────────────────────────────────────────────────────
@@ -314,7 +524,6 @@ export class Http {
       timeoutId = setTimeout(() => timeoutController!.abort("timeout"), timeout);
     }
 
-    // Merge signals: external abort + timeout
     const effectiveSignal = timeoutController
       ? mergeSignals(signal, timeoutController.signal)
       : signal;
@@ -330,8 +539,8 @@ export class Http {
     } catch (err) {
       clearTimeout(timeoutId);
 
-      const abortSignal = timeoutController?.signal.aborted ? "timeout" : "abort";
-      const isTimeout = abortSignal === "timeout" || (err instanceof Error && err.message === "timeout");
+      const timedOut = timeoutController?.signal.aborted ?? false;
+      const isTimeout = timedOut || (err instanceof Error && err.message === "timeout");
       const isAborted = !isTimeout && signal.aborted;
       const isNetwork = !isTimeout && !isAborted;
 
@@ -350,7 +559,9 @@ export class Http {
     }
 
     // ── Parse body ────────────────────────────────────────────────────────────
-    const parsedBody = await parseBody(response);
+    const parsedBody = options.onDownloadProgress
+      ? await readBodyWithProgress(response, options.onDownloadProgress, options.responseType)
+      : await parseBody(response, options.responseType);
 
     if (!response.ok) {
       throw new HttpError({
@@ -417,17 +628,14 @@ export class Http {
     const opt = options.cache;
     const global = this.config.cache;
 
-    // Explicitly disabled for this request.
     if (opt === false) return null;
 
-    // Per-request driver override.
     if (opt && typeof opt === "object") {
       const driver = opt.driver ?? (typeof global === "object" ? global.driver : null);
       if (!driver) return null;
       return { ...opt, driver } as ResolvedCache;
     }
 
-    // Inherit global.
     if (opt === true || opt === undefined) {
       if (!global) return null;
       if (typeof global === "object") return global as ResolvedCache;
@@ -457,7 +665,6 @@ type ResolvedCache = HttpCacheConfig & { driver: CacheDriver };
 
 function mergeSignals(a: AbortSignal, b: AbortSignal): AbortSignal {
   const controller = new AbortController();
-
   const abort = () => controller.abort();
 
   if (a.aborted || b.aborted) {

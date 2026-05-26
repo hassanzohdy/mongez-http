@@ -1,4 +1,25 @@
 /**
+ * CancellableAsyncIterable — an AsyncIterable augmented with `.cancel()` and `.signal`.
+ * Returned by Http.stream(). Use with `for await...of`.
+ *
+ * @example
+ * const stream = http.stream<ChatChunk>('/chat', { method: 'POST', data: { messages } });
+ * try {
+ *   for await (const chunk of stream) { ... }
+ * } catch (err) {
+ *   if (err instanceof HttpError && !err.isAborted) throw err;
+ * }
+ * // Cancel from outside:
+ * stream.cancel('component unmounted');
+ */
+export type CancellableAsyncIterable<T> = AsyncIterable<T> & {
+  /** Abort the in-flight stream. Ends iteration silently. */
+  cancel(reason?: string): void;
+  /** The AbortSignal wired into this stream. */
+  readonly signal: AbortSignal;
+};
+
+/**
  * CancellablePromise — a Promise augmented with `.cancel()` and `.signal`.
  *
  * Usage:
