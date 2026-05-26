@@ -1,0 +1,395 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Http } from "../src/Http";
+import { HttpError } from "../src/HttpError";
+
+// ─── Fetch mock helpers ───────────────────────────────────────────────────────
+
+function mockFetch(
+  body: unknown,
+  status = 200,
+  headers: Record<string, string> = {},
+) {
+  const contentType =
+    typeof body === "object" ? "application/json" : "text/plain";
+
+  const response = new Response(
+    typeof body === "object" ? JSON.stringify(body) : String(body),
+    {
+      status,
+      headers: { "Content-Type": contentType, ...headers },
+    },
+  );
+
+  return vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(response);
+}
+
+function mockFetchError(message = "Failed to fetch") {
+  return vi
+    .spyOn(globalThis, "fetch")
+    .mockRejectedValueOnce(new TypeError(message));
+}
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
+describe("Http", () => {
+  let http: Http;
+
+  beforeEach(() => {
+    http = new Http({ baseURL: "https://api.example.com" });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  // ── GET ──────────────────────────────────────────────────────────────────────
+
+  describe("get()", () => {
+    it("returns data on success", async () => {
+      mockFetch({ users: [] });
+      const { data, error } = await http.get("/users");
+      expect(error).toBeNull();
+      expect(data).toEqual({ users: [] });
+    });
+
+    it("returns error on 404", async () => {
+      mockFetch({ message: "Not found" }, 404);
+      const { data, error } = await http.get("/missing");
+      expect(data).toBeNull();
+      expect(error).toBeInstanceOf(HttpError);
+      expect(error!.status).toBe(404);
+      expect(error!.isNotFound()).toBe(true);
+    });
+
+    it("appends query params to URL", async () => {
+      const spy = mockFetch([]);
+      await http.get("/users", { params: { page: 2, limit: 20 } });
+      expect(spy).toHaveBeenCalledWith(
+        "https://api.example.com/users?page=2&limit=20",
+        expect.anything(),
+      );
+    });
+
+    it("handles array params", async () => {
+      const spy = mockFetch([]);
+      await http.get("/users", { params: { ids: [1, 2, 3] } });
+      const url = spy.mock.calls[0]![0] as string;
+      expect(url).toContain("ids=1");
+      expect(url).toContain("ids=2");
+      expect(url).toContain("ids=3");
+    });
+
+    it("omits null/undefined params", async () => {
+      const spy = mockFetch([]);
+      await http.get("/users", { params: { page: null, limit: undefined, q: "x" } });
+      const url = spy.mock.calls[0]![0] as string;
+      expect(url).not.toContain("page");
+      expect(url).not.toContain("limit");
+      expect(url).toContain("q=x");
+    });
+  });
+
+  // ── POST ─────────────────────────────────────────────────────────────────────
+
+  describe("post()", () => {
+    it("sends JSON body and Content-Type header", async () => {
+      const spy = mockFetch({ id: 1 }, 201);
+      await http.post("/users", { name: "Alice" });
+
+      const [, init] = spy.mock.calls[0]!;
+      expect((init as RequestInit).body).toBe(JSON.stringify({ name: "Alice" }));
+      expect((init as RequestInit).headers as Record<string, string>).toMatchObject({
+        "Content-Type": "application/json",
+      });
+    });
+
+    it("does not set Content-Type for FormData", async () => {
+      const spy = mockFetch({ id: 1 }, 201);
+      const fd = new FormData();
+      fd.append("name", "Alice");
+      await http.post("/users", fd);
+
+      const [, init] = spy.mock.calls[0]!;
+      expect((init as RequestInit).headers as Record<string, string>).not.toHaveProperty(
+        "Content-Type",
+      );
+    });
+  });
+
+  // ── PUT → POST (putToPost) ────────────────────────────────────────────────────
+
+  describe("putToPost", () => {
+    it("converts PUT to POST and appends _method", async () => {
+      const client = new Http({ baseURL: "https://api.example.com", putToPost: true });
+      const spy = mockFetch({ ok: true });
+      await client.put("/users/1", { name: "Bob" });
+
+      const [, init] = spy.mock.calls[0]!;
+      expect((init as RequestInit).method).toBe("POST");
+      expect((init as RequestInit).body).toContain('"_method":"PUT"');
+    });
+
+    it("respects custom putMethodKey", async () => {
+      const client = new Http({
+        baseURL: "https://api.example.com",
+        putToPost: true,
+        putMethodKey: "_httpMethod",
+      });
+      mockFetch({ ok: true });
+      const spy = vi.spyOn(globalThis, "fetch");
+      await client.put("/users/1", { x: 1 });
+
+      const [, init] = spy.mock.calls[0]!;
+      expect((init as RequestInit).body).toContain('"_httpMethod":"PUT"');
+    });
+  });
+
+  // ── DELETE ───────────────────────────────────────────────────────────────────
+
+  describe("delete()", () => {
+    it("sends DELETE request", async () => {
+      const spy = mockFetch(null, 204);
+      await http.delete("/users/1");
+      const [, init] = spy.mock.calls[0]!;
+      expect((init as RequestInit).method).toBe("DELETE");
+    });
+
+    it("supports body via options.data", async () => {
+      const spy = mockFetch(null, 204);
+      await http.delete("/users", { data: { ids: [1, 2] } });
+      const [, init] = spy.mock.calls[0]!;
+      expect((init as RequestInit).body).toBe(JSON.stringify({ ids: [1, 2] }));
+    });
+  });
+
+  // ── Auth ─────────────────────────────────────────────────────────────────────
+
+  describe("auth", () => {
+    it("attaches static Authorization header", async () => {
+      const client = new Http({
+        baseURL: "https://api.example.com",
+        auth: "Bearer token123",
+      });
+      const spy = mockFetch({});
+      await client.get("/me");
+      const [, init] = spy.mock.calls[0]!;
+      expect((init as RequestInit).headers as Record<string, string>).toMatchObject({
+        Authorization: "Bearer token123",
+      });
+    });
+
+    it("calls auth factory before each request", async () => {
+      const authFn = vi.fn().mockReturnValue("Bearer dynamic");
+      const client = new Http({ baseURL: "https://api.example.com", auth: authFn });
+      mockFetch({});
+      await client.get("/me");
+      expect(authFn).toHaveBeenCalledOnce();
+    });
+
+    it("skips header when auth factory returns null", async () => {
+      const client = new Http({ baseURL: "https://api.example.com", auth: () => null });
+      const spy = mockFetch({});
+      await client.get("/me");
+      const [, init] = spy.mock.calls[0]!;
+      expect((init as RequestInit).headers as Record<string, string>).not.toHaveProperty(
+        "Authorization",
+      );
+    });
+  });
+
+  // ── Network error ─────────────────────────────────────────────────────────────
+
+  describe("network errors", () => {
+    it("returns isNetwork=true on fetch rejection", async () => {
+      mockFetchError("Failed to fetch");
+      const { data, error } = await http.get("/users");
+      expect(data).toBeNull();
+      expect(error!.isNetwork).toBe(true);
+      expect(error!.status).toBeNull();
+    });
+  });
+
+  // ── Cancel ──────────────────────────────────────────────────────────────────
+
+  describe("cancel()", () => {
+    it("returns isAborted=true when cancelled", async () => {
+      vi.spyOn(globalThis, "fetch").mockImplementationOnce(
+        (_input, init) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () =>
+              reject(new DOMException("Aborted", "AbortError")),
+            );
+          }),
+      );
+
+      const req = http.get("/slow");
+      req.cancel();
+      const { data, error } = await req;
+      expect(data).toBeNull();
+      expect(error!.isAborted).toBe(true);
+    });
+  });
+
+  // ── throw option ─────────────────────────────────────────────────────────────
+
+  describe("throw option", () => {
+    it("throws HttpError when throw:true and request fails", async () => {
+      mockFetch({ message: "Not found" }, 404);
+      await expect(http.get("/missing", { throw: true })).rejects.toBeInstanceOf(
+        HttpError,
+      );
+    });
+  });
+
+  // ── Interceptors ─────────────────────────────────────────────────────────────
+
+  describe("interceptors", () => {
+    it("before interceptor can modify headers", async () => {
+      const spy = mockFetch({});
+      http.before((req) => ({ ...req, headers: { ...req.headers, "X-Custom": "yes" } }));
+      await http.get("/test");
+      const [, init] = spy.mock.calls[0]!;
+      expect((init as RequestInit).headers as Record<string, string>).toMatchObject({
+        "X-Custom": "yes",
+      });
+    });
+
+    it("after interceptor can transform result", async () => {
+      mockFetch({ items: [1, 2] });
+      http.after((result) => {
+        if (result.data) {
+          return { ...result, data: (result.data as { items: number[] }).items };
+        }
+      });
+      const { data } = await http.get("/test");
+      expect(data).toEqual([1, 2]);
+    });
+  });
+
+  // ── Retry ────────────────────────────────────────────────────────────────────
+
+  describe("retry", () => {
+    it("retries on 500 and succeeds on second attempt", async () => {
+      vi.spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ err: true }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+          }),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ ok: true }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+
+      const client = new Http({
+        baseURL: "https://api.example.com",
+        retry: { attempts: 1, delay: 0, backoff: false },
+      });
+
+      const { data, error } = await client.get("/unstable");
+      expect(error).toBeNull();
+      expect(data).toEqual({ ok: true });
+    });
+
+    it("returns error after all retries exhausted", async () => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(JSON.stringify({ err: true }), {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+      const client = new Http({
+        baseURL: "https://api.example.com",
+        retry: { attempts: 2, delay: 0, backoff: false },
+      });
+
+      const { error } = await client.get("/down");
+      expect(error!.status).toBe(503);
+    });
+
+    it("does not retry on 400", async () => {
+      const spy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(JSON.stringify({}), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+      const client = new Http({
+        baseURL: "https://api.example.com",
+        retry: { attempts: 3, delay: 0 },
+      });
+
+      await client.get("/bad-request");
+      expect(spy).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ── Cache ────────────────────────────────────────────────────────────────────
+
+  describe("cache", () => {
+    it("returns cached value on second call", async () => {
+      const store = new Map<string, unknown>();
+      const driver = {
+        get: async (k: string) => store.get(k) ?? null,
+        set: async (k: string, v: unknown) => { store.set(k, v); },
+      };
+
+      const client = new Http({
+        baseURL: "https://api.example.com",
+        cache: { driver, ttl: 60 },
+      });
+
+      mockFetch({ users: [1] });
+      await client.get("/users");
+
+      // Second call — fetch should NOT be called.
+      const spy = vi.spyOn(globalThis, "fetch");
+      const { data } = await client.get("/users");
+      expect(spy).not.toHaveBeenCalled();
+      expect(data).toEqual({ users: [1] });
+    });
+
+    it("skips cache when cache:false per-request", async () => {
+      const store = new Map<string, unknown>();
+      store.set("http:https://api.example.com/users", { old: true });
+
+      const driver = {
+        get: async (k: string) => store.get(k) ?? null,
+        set: async (k: string, v: unknown) => { store.set(k, v); },
+      };
+
+      const client = new Http({
+        baseURL: "https://api.example.com",
+        cache: { driver, ttl: 60 },
+      });
+
+      const spy = mockFetch({ fresh: true });
+      const { data } = await client.get("/users", { cache: false });
+      expect(spy).toHaveBeenCalledOnce();
+      expect(data).toEqual({ fresh: true });
+    });
+  });
+
+  // ── extend() ─────────────────────────────────────────────────────────────────
+
+  describe("extend()", () => {
+    it("creates a new instance with merged config", () => {
+      const base = new Http({ baseURL: "https://api.example.com", timeout: 5000 });
+      const extended = base.extend({ headers: { "X-App": "1" } });
+      expect(extended.getConfig().baseURL).toBe("https://api.example.com");
+      expect(extended.getConfig().timeout).toBe(5000);
+      expect(extended.getConfig().headers).toEqual({ "X-App": "1" });
+    });
+
+    it("does not mutate the parent instance", () => {
+      const base = new Http({ baseURL: "https://api.example.com" });
+      base.extend({ headers: { "X-App": "1" } });
+      expect(base.getConfig().headers).toBeUndefined();
+    });
+  });
+});
