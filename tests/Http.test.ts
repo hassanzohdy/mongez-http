@@ -726,5 +726,167 @@ describe("Http", () => {
     });
   });
 
+  // ── default params ───────────────────────────────────────────────────────────
+
+  describe("default params (HttpConfig.params)", () => {
+    it("appends default params to every request", async () => {
+      const client = new Http({
+        baseURL: "https://api.example.com",
+        params: { api_key: "xyz", version: "v2" },
+      });
+      const spy = mockFetch([]);
+      await client.get("/items");
+      const url = spy.mock.calls[0]![0] as string;
+      expect(url).toContain("api_key=xyz");
+      expect(url).toContain("version=v2");
+    });
+
+    it("per-request params are merged on top (request wins on conflict)", async () => {
+      const client = new Http({
+        baseURL: "https://api.example.com",
+        params: { version: "v1", locale: "en" },
+      });
+      const spy = mockFetch([]);
+      await client.get("/items", { params: { version: "v3", page: 2 } });
+      const url = spy.mock.calls[0]![0] as string;
+      expect(url).toContain("version=v3");  // request overrides config
+      expect(url).toContain("locale=en");   // config default preserved
+      expect(url).toContain("page=2");
+    });
+  });
+
+  // ── redirect ─────────────────────────────────────────────────────────────────
+
+  describe("redirect option", () => {
+    it("forwards global redirect to fetch", async () => {
+      const client = new Http({ baseURL: "https://api.example.com", redirect: "error" });
+      const spy = mockFetch({});
+      await client.get("/test");
+      const [, init] = spy.mock.calls[0]!;
+      expect((init as RequestInit).redirect).toBe("error");
+    });
+
+    it("per-request redirect overrides global redirect", async () => {
+      const client = new Http({ baseURL: "https://api.example.com", redirect: "follow" });
+      const spy = mockFetch({});
+      await client.get("/test", { redirect: "manual" });
+      const [, init] = spy.mock.calls[0]!;
+      expect((init as RequestInit).redirect).toBe("manual");
+    });
+  });
+
+  // ── HttpError.headers and HttpError.request ───────────────────────────────────
+
+  describe("HttpError.headers and HttpError.request", () => {
+    it("error.headers contains response headers on HTTP error", async () => {
+      mockFetch({ msg: "gone" }, 410, { "x-request-id": "abc123" });
+      const { error } = await http.get("/gone");
+      expect(error!.headers).toMatchObject({ "x-request-id": "abc123" });
+    });
+
+    it("error.headers is null on network error", async () => {
+      mockFetchError("Connection refused");
+      const { error } = await http.get("/unreachable");
+      expect(error!.headers).toBeNull();
+    });
+
+    it("error.request contains the outgoing request", async () => {
+      mockFetch({ msg: "not found" }, 404);
+      const { error } = await http.get("/missing");
+      expect(error!.request).not.toBeNull();
+      expect(error!.request!.url).toContain("/missing");
+      expect(error!.request!.method).toBe("GET");
+    });
+  });
+
+  // ── onRetry callback ─────────────────────────────────────────────────────────
+
+  describe("onRetry callback", () => {
+    it("fires onRetry before each retry attempt", async () => {
+      vi.spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({}), { status: 503, headers: { "Content-Type": "application/json" } }),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "Content-Type": "application/json" } }),
+        );
+
+      const retryCalls: Array<{ attempt: number; delay: number }> = [];
+      const client = new Http({
+        baseURL: "https://api.example.com",
+        retry: {
+          attempts: 1,
+          delay: 0,
+          backoff: false,
+          onRetry: (attempt, _err, delay) => retryCalls.push({ attempt, delay }),
+        },
+      });
+
+      const { data } = await client.get("/unstable");
+      expect(data).toEqual({ ok: true });
+      expect(retryCalls).toHaveLength(1);
+      expect(retryCalls[0]!.attempt).toBe(1); // 1-based
+    });
+  });
+
+  // ── after interceptor replay() ────────────────────────────────────────────────
+
+  describe("after interceptor replay()", () => {
+    it("replay() retries the request with fresh auth (token-refresh pattern)", async () => {
+      let tokenVersion = 1;
+
+      const client = new Http({
+        baseURL: "https://api.example.com",
+        auth: () => `Bearer token-v${tokenVersion}`,
+      });
+
+      const spy = vi.spyOn(globalThis, "fetch")
+        // First call: 401
+        .mockResolvedValueOnce(
+          new Response("{}", { status: 401, headers: { "Content-Type": "application/json" } }),
+        )
+        // Second call (replay): 200
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ id: 1 }), { status: 200, headers: { "Content-Type": "application/json" } }),
+        );
+
+      client.after(async (result, { replay }) => {
+        if (result.error?.isUnauthorized) {
+          tokenVersion = 2; // "refresh token"
+          return replay();
+        }
+      });
+
+      const { data, error } = await client.get("/profile");
+      expect(error).toBeNull();
+      expect(data).toEqual({ id: 1 });
+      // Second call must use the new token.
+      const [, secondInit] = spy.mock.calls[1]!;
+      expect((secondInit as RequestInit).headers as Record<string, string>).toMatchObject({
+        Authorization: "Bearer token-v2",
+      });
+    });
+
+    it("replay() is a no-op inside a replayed request (prevents infinite loops)", async () => {
+      const client = new Http({ baseURL: "https://api.example.com" });
+
+      // Always 401 — even after replay, so without the guard this would loop forever.
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response("{}", { status: 401, headers: { "Content-Type": "application/json" } }),
+      );
+
+      client.after(async (result, { replay }) => {
+        if (result.error?.isUnauthorized) {
+          return replay(); // on the replayed request replay() is a no-op (returns current result)
+        }
+      });
+
+      const { error } = await client.get("/locked");
+      expect(error!.isUnauthorized).toBe(true);
+      // Exactly 2 network calls: original + 1 replay, NOT an infinite loop.
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    });
+  });
+
   // ── extend() ─────────────────────────────────────────────────────────────────
 });

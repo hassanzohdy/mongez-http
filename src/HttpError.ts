@@ -1,3 +1,5 @@
+import type { OutgoingRequest } from "./Http.types";
+
 /**
  * Structured error thrown (or returned) by every Http method.
  *
@@ -5,6 +7,7 @@
  *   if (error.isAborted)        { return; }
  *   if (error.isNotFound)       { return null; }
  *   if (error.isValidationError) { return showErrors(error.body); }
+ *   console.log(error.headers?.['x-request-id']);
  */
 export class HttpError extends Error {
   /** HTTP status code, or null for network/abort/timeout errors. */
@@ -25,6 +28,24 @@ export class HttpError extends Error {
   /** True for network-level failures (DNS, CORS, no connection). */
   public readonly isNetwork: boolean;
 
+  /**
+   * Response headers as a plain object. null when no response was received
+   * (network error, timeout, or abort).
+   *
+   * Shortcut so you don't have to reach into `error.response?.headers.get(...)`:
+   *   const remaining = error.headers?.['x-rate-limit-remaining'];
+   */
+  public readonly headers: Record<string, string> | null;
+
+  /**
+   * The outgoing request that triggered this error.
+   * Useful in `throw: true` mode where you only have the HttpError (no HttpResult).
+   *
+   * Note: the `headers` object on the request may contain sensitive values
+   * (Authorization, Cookie). Do not log this object without redacting first.
+   */
+  public readonly request: OutgoingRequest | null;
+
   constructor(opts: {
     message: string;
     status?: number | null;
@@ -33,6 +54,8 @@ export class HttpError extends Error {
     isAborted?: boolean;
     isTimeout?: boolean;
     isNetwork?: boolean;
+    headers?: Record<string, string> | null;
+    request?: OutgoingRequest | null;
   }) {
     super(opts.message);
     this.name = "HttpError";
@@ -42,6 +65,8 @@ export class HttpError extends Error {
     this.isAborted = opts.isAborted ?? false;
     this.isTimeout = opts.isTimeout ?? false;
     this.isNetwork = opts.isNetwork ?? false;
+    this.headers = opts.headers ?? null;
+    this.request = opts.request ?? null;
 
     // Preserve prototype chain in transpiled ES5 environments.
     Object.setPrototypeOf(this, new.target.prototype);
@@ -93,6 +118,8 @@ export class HttpError extends Error {
       isAborted: this.isAborted,
       isTimeout: this.isTimeout,
       isNetwork: this.isNetwork,
+      headers: this.headers,
+      // `request` is intentionally omitted — it may contain raw Authorization / Cookie headers.
     };
   }
 }

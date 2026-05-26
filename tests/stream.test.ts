@@ -159,7 +159,7 @@ describe("Http.stream()", () => {
   // ── Error handling ────────────────────────────────────────────────────────────
 
   describe("error handling", () => {
-    it("throws HttpError when response is not ok", async () => {
+    it("sets .error on non-ok response (does not throw)", async () => {
       vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
         new Response(JSON.stringify({ message: "Unauthorized" }), {
           status: 401,
@@ -167,23 +167,35 @@ describe("Http.stream()", () => {
         }),
       );
 
-      await expect(
-        collect(http.stream("/secure")),
-      ).rejects.toBeInstanceOf(HttpError);
+      const stream = http.stream("/secure");
+      const chunks = await collect(stream);
+
+      expect(chunks).toHaveLength(0);
+      expect(stream.error).toBeInstanceOf(HttpError);
+      expect(stream.error!.isUnauthorized).toBe(true);
     });
 
-    it("thrown HttpError has correct status", async () => {
+    it(".error has correct status and predicate", async () => {
       vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
         new Response("{}", { status: 403, headers: { "Content-Type": "application/json" } }),
       );
 
-      try {
-        await collect(http.stream("/forbidden"));
-        expect.fail("should have thrown");
-      } catch (err) {
-        expect((err as HttpError).status).toBe(403);
-        expect((err as HttpError).isForbidden).toBe(true);
-      }
+      const stream = http.stream("/forbidden");
+      await collect(stream);
+
+      expect(stream.error!.status).toBe(403);
+      expect(stream.error!.isForbidden).toBe(true);
+    });
+
+    it(".error is null on clean completion", async () => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+        streamResponse("data: {}\n\n"),
+      );
+
+      const stream = http.stream("/ok");
+      await collect(stream);
+
+      expect(stream.error).toBeNull();
     });
 
     it("ends silently on network error when cancelled", async () => {
@@ -194,9 +206,64 @@ describe("Http.stream()", () => {
       const stream = http.stream("/chat");
       stream.cancel();
 
-      // Should not throw — iteration just ends.
+      // Should not throw — iteration just ends silently.
       const chunks = await collect(stream);
       expect(chunks).toHaveLength(0);
+      expect(stream.error).toBeNull(); // cancelled, not an error
+    });
+  });
+
+  // ── SSE proper parsing ────────────────────────────────────────────────────────
+
+  describe("SSE proper parsing", () => {
+    it("concatenates multi-line data fields with newline", async () => {
+      // RFC 8895: multiple data: lines in one event are joined with '\n'
+      const body = "data: line one\ndata: line two\n\n";
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(streamResponse(body));
+
+      const chunks = await collect(http.stream("/multi"));
+      // "line one\nline two" is not valid JSON — yields raw string
+      expect(chunks).toEqual(["line one\nline two"]);
+    });
+
+    it("extracts data from event with id and event fields", async () => {
+      const body = "id: 42\nevent: update\ndata: {\"v\":7}\n\n";
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(streamResponse(body));
+
+      const chunks = await collect(http.stream("/sse-fields"));
+      expect(chunks).toEqual([{ v: 7 }]);
+    });
+  });
+
+  // ── SSE reconnect ─────────────────────────────────────────────────────────────
+
+  describe("SSE reconnect", () => {
+    it("reconnects and sends Last-Event-ID after normal stream end", async () => {
+      // First response: one event with id:5, then stream ends.
+      const first = streamResponse("id: 5\ndata: {\"seq\":1}\n\n");
+      // Second response: one more event, then stream ends.
+      const second = streamResponse("data: {\"seq\":2}\n\n");
+      // Third call: we cancel before a third would fire.
+
+      const spy = vi.spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(first)
+        .mockResolvedValueOnce(second);
+
+      const stream = http.stream<{ seq: number }>("/events", {
+        reconnect: true,
+        reconnectDelay: 0, // instant reconnect in tests
+        maxReconnectAttempts: 1,
+      });
+
+      const chunks = await collect(stream);
+
+      // Both events collected across reconnect.
+      expect(chunks).toEqual([{ seq: 1 }, { seq: 2 }]);
+      // Second call must include Last-Event-ID header.
+      const [, secondInit] = spy.mock.calls[1]!;
+      expect((secondInit as RequestInit).headers as Record<string, string>).toMatchObject({
+        "Last-Event-ID": "5",
+      });
     });
   });
 

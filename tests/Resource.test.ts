@@ -194,6 +194,33 @@ describe("Resource", () => {
     });
   });
 
+  // ── action() ─────────────────────────────────────────────────────────────────
+
+  describe("action()", () => {
+    it("POSTs to /route/id/actionName by default", async () => {
+      const spy = mockFetch({ success: true });
+      await users.action(42, "activate");
+      const [url, init] = spy.mock.calls[0]!;
+      expect(url).toBe("https://api.example.com/users/42/activate");
+      expect((init as RequestInit).method).toBe("POST");
+    });
+
+    it("sends data in the request body", async () => {
+      const spy = mockFetch({ success: true });
+      await users.action(5, "refund", { amount: 100 });
+      const [, init] = spy.mock.calls[0]!;
+      expect((init as RequestInit).body).toBe(JSON.stringify({ amount: 100 }));
+    });
+
+    it("respects a custom method", async () => {
+      const spy = mockFetch({ ok: true });
+      await users.action(1, "publish", undefined, {}, "PATCH");
+      const [url, init] = spy.mock.calls[0]!;
+      expect(url).toBe("https://api.example.com/users/1/publish");
+      expect((init as RequestInit).method).toBe("PATCH");
+    });
+  });
+
   // ── useHttp() ────────────────────────────────────────────────────────────────
 
   describe("useHttp()", () => {

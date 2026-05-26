@@ -1,14 +1,17 @@
+import type { HttpError } from "./HttpError";
+
 /**
- * CancellableAsyncIterable — an AsyncIterable augmented with `.cancel()` and `.signal`.
- * Returned by Http.stream(). Use with `for await...of`.
+ * CancellableAsyncIterable — an AsyncIterable augmented with `.cancel()`, `.signal`,
+ * and `.error`. Returned by Http.stream(). Use with `for await...of`.
  *
  * @example
  * const stream = http.stream<ChatChunk>('/chat', { method: 'POST', data: { messages } });
- * try {
- *   for await (const chunk of stream) { ... }
- * } catch (err) {
- *   if (err instanceof HttpError && !err.isAborted) throw err;
+ * for await (const chunk of stream) {
+ *   process(chunk);
  * }
+ * // No try/catch needed — check .error after the loop:
+ * if (stream.error) console.error('Stream failed:', stream.error.message);
+ *
  * // Cancel from outside:
  * stream.cancel('component unmounted');
  */
@@ -17,6 +20,14 @@ export type CancellableAsyncIterable<T> = AsyncIterable<T> & {
   cancel(reason?: string): void;
   /** The AbortSignal wired into this stream. */
   readonly signal: AbortSignal;
+  /**
+   * Set after iteration ends if the stream terminated due to an error.
+   * `null` on clean completion or cancellation.
+   *
+   * The generator never throws — errors are caught, stored here, and the
+   * iteration ends. Check this value after your `for await` loop.
+   */
+  readonly error: HttpError | null;
 };
 
 /**

@@ -1,5 +1,6 @@
 import type {
   AfterInterceptor,
+  AfterInterceptorContext,
   BeforeInterceptor,
   CacheDriver,
   HttpCacheConfig,
@@ -19,7 +20,7 @@ import type {
 import { HttpError } from "./HttpError";
 import { type CancellableAsyncIterable, type CancellablePromise, makeCancellable } from "./cancellable";
 import { appendParams } from "./utils/params";
-import { parseBody, prepareBody, readBodyWithProgress } from "./utils/body";
+import { parseBody, prepareBody, readBodyWithProgress, wrapBodyWithProgress } from "./utils/body";
 
 // ─── Module-level helpers ─────────────────────────────────────────────────────
 
@@ -100,8 +101,74 @@ function sanitiseRequestForEvent(req: OutgoingRequest): OutgoingRequest {
   return { ...req, headers: safe };
 }
 
+/**
+ * Parse a full SSE event block (lines between two blank lines) into its
+ * component fields: id, event, data (multi-line joined), and retry directive.
+ * Returns `data: undefined` when the block should be skipped (comment-only or
+ * no data lines).
+ */
+function parseSseBlock<T>(
+  block: string,
+  customParser?: (line: string) => unknown,
+): { data?: T; id?: string; event?: string; retry?: number } {
+  const lines = block.split("\n");
+  const dataLines: string[] = [];
+  let id: string | undefined;
+  let event: string | undefined;
+  let retry: number | undefined;
+
+  for (const line of lines) {
+    if (line.startsWith("id:")) {
+      id = line.slice(3).trimStart();
+    } else if (line.startsWith("event:")) {
+      event = line.slice(6).trimStart();
+    } else if (line.startsWith("retry:")) {
+      const n = parseInt(line.slice(6).trimStart(), 10);
+      if (!isNaN(n)) retry = n;
+    } else if (line.startsWith("data:")) {
+      dataLines.push(line.slice(5).trimStart());
+    }
+    // Lines starting with ":" are SSE comments — silently ignored.
+  }
+
+  if (dataLines.length === 0) return { id, event, retry };
+
+  const dataStr = dataLines.join("\n");
+  if (!dataStr || dataStr === "[DONE]") return { id, event, retry };
+
+  if (customParser) {
+    const parsed = customParser(dataStr);
+    return { data: parsed as T | undefined, id, event, retry };
+  }
+
+  try {
+    return { data: JSON.parse(dataStr) as T, id, event, retry };
+  } catch {
+    return { data: dataStr as unknown as T, id, event, retry };
+  }
+}
+
+/**
+ * Parse a single NDJSON line. Returns undefined to signal "skip this line".
+ */
+function parseNdjsonLine<T>(
+  line: string,
+  customParser?: (line: string) => unknown,
+): T | undefined {
+  if (customParser) return customParser(line) as T | undefined;
+
+  const trimmed = line.trim();
+  if (!trimmed) return undefined;
+  try {
+    return JSON.parse(trimmed) as T;
+  } catch {
+    return trimmed as unknown as T;
+  }
+}
+
 const DEFAULT_RETRY_ON = [429, 500, 502, 503, 504];
 const DEFAULT_TTL = 300; // 5 minutes
+const DEFAULT_RECONNECT_DELAY = 3000; // ms
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -112,36 +179,13 @@ function buildCacheKey(url: string, params?: HttpParams): string {
   return `http:${url}${qs ? `:${qs}` : ""}`;
 }
 
-/**
- * Parse a single line from a stream according to the requested format.
- * Returns undefined to signal "skip this line".
- */
-function parseStreamLine<T>(
-  line: string,
-  format: StreamFormat,
-  customParser?: (line: string) => unknown,
-): T | undefined {
-  if (customParser) return customParser(line) as T | undefined;
+// ─── Internal context for replay support ─────────────────────────────────────
 
-  if (format === "sse") {
-    if (!line.startsWith("data:")) return undefined;
-    const data = line.slice(5).trim();
-    if (!data || data === "[DONE]") return undefined;
-    try {
-      return JSON.parse(data) as T;
-    } catch {
-      return data as unknown as T;
-    }
-  }
-
-  // ndjson
-  const trimmed = line.trim();
-  if (!trimmed) return undefined;
-  try {
-    return JSON.parse(trimmed) as T;
-  } catch {
-    return trimmed as unknown as T;
-  }
+interface ReplayCtx {
+  method: HttpMethod | string;
+  path: string;
+  data: HttpData | undefined;
+  options: RequestOptions;
 }
 
 // ─── Http ─────────────────────────────────────────────────────────────────────
@@ -250,9 +294,6 @@ export class Http {
    *
    * GET requests are automatically deduplicated: concurrent calls with the same URL
    * share a single underlying fetch. Each caller gets its own CancellablePromise.
-   *
-   * Note: cancelling a deduplicated GET does not abort the shared fetch — other
-   * callers waiting for the same URL are unaffected.
    */
   request<T = unknown>(
     method: HttpMethod | string,
@@ -261,9 +302,13 @@ export class Http {
     options: RequestOptions = {},
   ): CancellablePromise<HttpResult<T>> {
     if (method === "GET") {
+      // Merge default params for dedup key so it matches what buildOutgoingRequest produces.
+      const mergedParams = this.config.params
+        ? { ...this.config.params, ...options.params }
+        : options.params;
       const dedupeKey = appendParams(
         joinUrl(this.config.baseURL ?? "", path),
-        options.params,
+        mergedParams,
       );
 
       if (!this.inFlight.has(dedupeKey)) {
@@ -349,15 +394,18 @@ export class Http {
    * Open a streaming connection and yield parsed chunks as an async iterable.
    *
    * Supports Server-Sent Events (SSE) and newline-delimited JSON (NDJSON).
-   * Use `.cancel()` to abort the stream from outside the loop.
+   * For SSE, automatically reconnects on disconnect and sends `Last-Event-ID`
+   * so the server can resume. Use `.cancel()` to abort from outside the loop.
+   *
+   * The stream **never throws** — errors are stored in `.error` instead.
+   * Check `stream.error` after the `for await` loop.
    *
    * @example
-   * for await (const chunk of http.stream<ChatChunk>('/chat', {
-   *   method: 'POST',
-   *   data: { messages },
-   * })) {
-   *   process(chunk);
+   * const stream = http.stream<ChatChunk>('/chat', { method: 'POST', data: { messages } });
+   * for await (const chunk of stream) {
+   *   setContent(c => c + chunk.content);
    * }
+   * if (stream.error) showError(stream.error.message);
    */
   stream<T = unknown>(
     path: string,
@@ -375,104 +423,194 @@ export class Http {
     }
 
     const format = options.format ?? "sse";
+    const shouldReconnect = options.reconnect ?? false;
+    const maxAttempts = options.maxReconnectAttempts ?? Infinity;
+    const baseReconnectDelay = options.reconnectDelay ?? DEFAULT_RECONNECT_DELAY;
     const self = this;
 
+    // Shared state written by the generator, read by the iterable's .error getter.
+    const state: { error: HttpError | null } = { error: null };
+
+    // SSE reconnection state — persists across reconnects.
+    let lastEventId: string | undefined;
+    let serverRetryDelay: number | undefined; // set by the server's `retry:` directive
+
     async function* generator(): AsyncGenerator<T> {
-      // ── Build request (shared logic with regular requests) ───────────────────
-      const extraHeaders: Record<string, string> = {};
-      if (!options.headers?.["Accept"]) {
-        extraHeaders["Accept"] = "text/event-stream, application/x-ndjson, */*";
-      }
+      let reconnectAttempt = 0;
 
-      const req = await self.buildOutgoingRequest(
-        options.method ?? "GET",
-        path,
-        options.data as HttpData | undefined,
-        options,
-        extraHeaders,
-      );
+      while (true) {
+        if (controller.signal.aborted) return;
 
-      self.emit("request", { request: sanitiseRequestForEvent(req) });
-
-      // ── Fetch ────────────────────────────────────────────────────────────────
-      let response: Response;
-      try {
-        response = await fetch(req.url, {
-          method: req.method,
-          headers: req.headers,
-          body: req.body,
-          signal: controller.signal,
-          credentials: options.credentials ?? self.config.credentials,
-          mode: options.mode ?? self.config.mode,
-        });
-      } catch {
-        if (controller.signal.aborted) return; // cancelled — end silently
-        const err = new HttpError({ message: "Stream network error", isNetwork: true });
-        self.emit("error", { request: sanitiseRequestForEvent(req), response: undefined });
-        throw err;
-      }
-
-      if (!response.ok) {
-        const errorBody = await parseBody(response).catch(() => null);
-        const err = new HttpError({
-          message: `HTTP ${response.status} ${response.statusText}`,
-          status: response.status,
-          body: errorBody,
-          response,
-        });
-        self.emit("error", { request: sanitiseRequestForEvent(req), response: undefined });
-        throw err;
-      }
-
-      // ── Read line-by-line ────────────────────────────────────────────────────
-      const reader = response.body?.getReader();
-      if (!reader) return;
-
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      try {
-        while (true) {
-          let readResult: ReadableStreamReadResult<Uint8Array>;
-          try {
-            readResult = await reader.read();
-          } catch {
-            if (controller.signal.aborted) return; // cancelled — end silently
-            const err = new HttpError({ message: "Stream read error", isNetwork: true });
-            self.emit("error", { request: sanitiseRequestForEvent(req), response: undefined });
-            throw err;
-          }
-
-          const { done, value } = readResult;
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-
-          // Split on newlines; keep the last (potentially incomplete) fragment.
-          const lines = buffer.split("\n");
-          buffer = lines.pop() ?? "";
-
-          for (const line of lines) {
-            const parsed = parseStreamLine<T>(
-              line,
-              format,
-              options.parseLine as ((l: string) => T | undefined) | undefined,
-            );
-            if (parsed !== undefined) yield parsed;
-          }
+        // ── Build request (fresh each attempt — re-applies auth + Last-Event-ID) ──
+        const extraHeaders: Record<string, string> = {};
+        if (!options.headers?.["Accept"]) {
+          extraHeaders["Accept"] = "text/event-stream, application/x-ndjson, */*";
+        }
+        if (lastEventId !== undefined) {
+          extraHeaders["Last-Event-ID"] = lastEventId;
         }
 
-        // Flush any remaining buffered content.
-        if (buffer.trim()) {
-          const parsed = parseStreamLine<T>(
-            buffer,
-            format,
-            options.parseLine as ((l: string) => T | undefined) | undefined,
-          );
-          if (parsed !== undefined) yield parsed;
+        const req = await self.buildOutgoingRequest(
+          options.method ?? "GET",
+          path,
+          options.data as HttpData | undefined,
+          options,
+          extraHeaders,
+        );
+
+        self.emit("request", { request: sanitiseRequestForEvent(req) });
+
+        // ── Fetch ──────────────────────────────────────────────────────────────
+        let response: Response;
+        try {
+          response = await fetch(req.url, {
+            method: req.method,
+            headers: req.headers,
+            body: req.body,
+            signal: controller.signal,
+            credentials: options.credentials ?? self.config.credentials,
+            mode: options.mode ?? self.config.mode,
+            redirect: options.redirect ?? self.config.redirect,
+          });
+        } catch {
+          if (controller.signal.aborted) return; // cancelled — end silently
+
+          const err = new HttpError({
+            message: "Stream network error",
+            isNetwork: true,
+            request: req,
+          });
+          self.emit("error", { request: sanitiseRequestForEvent(req) });
+
+          if (!shouldReconnect || reconnectAttempt >= maxAttempts) {
+            state.error = err;
+            return;
+          }
+
+          reconnectAttempt++;
+          await sleep(serverRetryDelay ?? baseReconnectDelay);
+          continue;
         }
-      } finally {
-        reader.releaseLock();
+
+        if (!response.ok) {
+          const errorBody = await parseBody(response).catch(() => null);
+          const err = new HttpError({
+            message: `HTTP ${response.status} ${response.statusText}`,
+            status: response.status,
+            body: errorBody,
+            response,
+            headers: headersToObject(response.headers),
+            request: req,
+          });
+          self.emit("error", { request: sanitiseRequestForEvent(req) });
+          // Do NOT reconnect on HTTP errors — they indicate a server-side problem
+          // (wrong path, auth failure, etc.) that retrying won't fix.
+          state.error = err;
+          return;
+        }
+
+        // ── Read and parse the stream ──────────────────────────────────────────
+        const reader = response.body?.getReader();
+        if (!reader) return;
+
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let readError = false;
+
+        try {
+          while (true) {
+            let readResult: ReadableStreamReadResult<Uint8Array>;
+            try {
+              readResult = await reader.read();
+            } catch {
+              if (controller.signal.aborted) return;
+              readError = true;
+              break;
+            }
+
+            const { done, value } = readResult;
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+
+            if (format === "sse") {
+              // SSE events are delimited by double-newlines.
+              let boundary: number;
+              while ((boundary = buffer.indexOf("\n\n")) !== -1) {
+                const block = buffer.slice(0, boundary);
+                buffer = buffer.slice(boundary + 2);
+
+                const parsed = parseSseBlock<T>(
+                  block,
+                  options.parseLine as ((l: string) => unknown) | undefined,
+                );
+                if (parsed.retry !== undefined) serverRetryDelay = parsed.retry;
+                if (parsed.id !== undefined) lastEventId = parsed.id;
+                if (parsed.data !== undefined) {
+                  yield parsed.data;
+                }
+              }
+            } else {
+              // NDJSON: one JSON value per line.
+              const lines = buffer.split("\n");
+              buffer = lines.pop() ?? "";
+              for (const line of lines) {
+                const parsed = parseNdjsonLine<T>(
+                  line,
+                  options.parseLine as ((l: string) => unknown) | undefined,
+                );
+                if (parsed !== undefined) {
+                  yield parsed;
+                }
+              }
+            }
+          }
+
+          // Flush any remaining buffered content after the stream ends.
+          if (buffer.trim()) {
+            if (format === "sse") {
+              const parsed = parseSseBlock<T>(
+                buffer,
+                options.parseLine as ((l: string) => unknown) | undefined,
+              );
+              if (parsed.retry !== undefined) serverRetryDelay = parsed.retry;
+              if (parsed.id !== undefined) lastEventId = parsed.id;
+              if (parsed.data !== undefined) yield parsed.data;
+            } else {
+              const parsed = parseNdjsonLine<T>(
+                buffer,
+                options.parseLine as ((l: string) => unknown) | undefined,
+              );
+              if (parsed !== undefined) yield parsed;
+            }
+          }
+        } finally {
+          reader.releaseLock();
+        }
+
+        // ── Handle reconnect logic ─────────────────────────────────────────────
+        if (readError) {
+          if (!shouldReconnect || reconnectAttempt >= maxAttempts) {
+            state.error = new HttpError({
+              message: "Stream read error",
+              isNetwork: true,
+              request: req,
+            });
+            return;
+          }
+          reconnectAttempt++;
+          await sleep(serverRetryDelay ?? baseReconnectDelay);
+          continue; // outer while — reconnect
+        }
+
+        // Normal stream end.
+        if (!shouldReconnect) return;
+
+        // SSE auto-reconnect after normal end.
+        reconnectAttempt++;
+        if (reconnectAttempt > maxAttempts) return;
+        await sleep(serverRetryDelay ?? baseReconnectDelay);
+        // fall through to top of outer while → reconnect
       }
     }
 
@@ -482,6 +620,7 @@ export class Http {
       [Symbol.asyncIterator](): AsyncIterator<T> { return gen; },
       cancel(reason?: string): void { controller.abort(reason ?? "cancelled"); },
       get signal(): AbortSignal { return controller.signal; },
+      get error(): HttpError | null { return state.error; },
     };
   }
 
@@ -499,7 +638,12 @@ export class Http {
     extraHeaders: Record<string, string> = {},
   ): Promise<OutgoingRequest> {
     const baseURL = this.config.baseURL ?? "";
-    const fullPath = appendParams(joinUrl(baseURL, path), options.params);
+
+    // Merge default config params with per-request params (request wins on conflict).
+    const mergedParams = this.config.params
+      ? { ...this.config.params, ...options.params }
+      : options.params;
+    const fullPath = appendParams(joinUrl(baseURL, path), mergedParams);
 
     const { body, contentType } = prepareBody(data);
 
@@ -539,6 +683,7 @@ export class Http {
     data: HttpData | undefined,
     options: RequestOptions,
     signal: AbortSignal,
+    isReplay = false,
   ): Promise<HttpResult<T>> {
     // ── putToPost conversion ──────────────────────────────────────────────────
     let actualMethod: HttpMethod | string = method;
@@ -559,6 +704,9 @@ export class Http {
     // ── Build outgoing request ────────────────────────────────────────────────
     const req = await this.buildOutgoingRequest(actualMethod, path, actualData, options);
 
+    // Stash the original (pre-putToPost) parameters for replay().
+    const replayCtx: ReplayCtx = { method, path, data, options };
+
     // ── Cache check (GET only) — runs before emitting "request" so the event
     //    only fires for actual network calls, not cache hits. ─────────────────
     const cacheConfig = this.resolveCacheConfig(options);
@@ -577,13 +725,11 @@ export class Http {
     }
 
     // ── Emit "request" (only for real network calls, never for cache hits) ────
-    // Credentials are redacted in the event payload so third-party listeners
-    // (analytics, loggers) never receive raw Authorization / Cookie values.
     this.emit("request", { request: sanitiseRequestForEvent(req) });
 
     // ── Retry wrapper ─────────────────────────────────────────────────────────
     const retryConfig = this.resolveRetryConfig(options);
-    return this.executeWithRetry<T>(req, signal, options, cacheConfig, retryConfig, cacheKey);
+    return this.executeWithRetry<T>(req, signal, options, cacheConfig, retryConfig, cacheKey, replayCtx, isReplay);
   }
 
   private async executeWithRetry<T>(
@@ -593,17 +739,19 @@ export class Http {
     cacheConfig: ResolvedCache | null,
     retryConfig: HttpRetryConfig | null,
     cacheKey: string | undefined,
+    replayCtx: ReplayCtx,
+    isReplay: boolean,
     attempt = 0,
   ): Promise<HttpResult<T>> {
     try {
-      return await this.executeSingle<T>(req, signal, options, cacheConfig, cacheKey);
+      return await this.executeSingle<T>(req, signal, options, cacheConfig, cacheKey, replayCtx, isReplay);
     } catch (err) {
       // Guard: only handle HttpErrors — rethrow anything else (e.g. interceptor bugs).
       if (!(err instanceof HttpError)) throw err;
 
       // Never retry aborts or timeouts.
       if (err.isAborted || err.isTimeout) {
-        return this.errorResult<T>(err, options, req);
+        return this.errorResult<T>(err, options, req, replayCtx, isReplay);
       }
 
       if (
@@ -633,11 +781,16 @@ export class Http {
           }
         }
 
+        // Fire the onRetry callback if configured.
+        if (retryConfig.onRetry) {
+          retryConfig.onRetry(attempt + 1, err, delay);
+        }
+
         await sleep(delay);
-        return this.executeWithRetry<T>(req, signal, options, cacheConfig, retryConfig, cacheKey, attempt + 1);
+        return this.executeWithRetry<T>(req, signal, options, cacheConfig, retryConfig, cacheKey, replayCtx, isReplay, attempt + 1);
       }
 
-      return this.errorResult<T>(err, options, req);
+      return this.errorResult<T>(err, options, req, replayCtx, isReplay);
     }
   }
 
@@ -647,6 +800,8 @@ export class Http {
     options: RequestOptions,
     cacheConfig: ResolvedCache | null,
     cacheKey: string | undefined,
+    replayCtx: ReplayCtx,
+    isReplay: boolean,
   ): Promise<HttpResult<T>> {
     // Fast path: if the signal was already aborted before the microtask queue
     // delivered execute() — e.g. cancel() was called synchronously right after
@@ -654,7 +809,7 @@ export class Http {
     // AbortSignal does NOT fire "abort" listeners retroactively, so waiting for
     // the event inside the fetch mock (or real fetch) would hang forever.
     if (signal.aborted) {
-      throw new HttpError({ message: "Request was cancelled", isAborted: true });
+      throw new HttpError({ message: "Request was cancelled", isAborted: true, request: req });
     }
 
     // ── Timeout ───────────────────────────────────────────────────────────────
@@ -671,17 +826,29 @@ export class Http {
       ? mergeSignals(signal, timeoutController.signal)
       : signal;
 
+    // ── Upload progress wrapping ───────────────────────────────────────────────
+    let fetchBody = req.body;
+    const extraInit: Record<string, unknown> = {};
+
+    if (options.onUploadProgress && req.body !== undefined) {
+      const wrapped = wrapBodyWithProgress(req.body, options.onUploadProgress);
+      fetchBody = wrapped.body;
+      if (wrapped.duplex) extraInit.duplex = wrapped.duplex;
+    }
+
     let response: Response;
     try {
       response = await fetch(req.url, {
         method: req.method,
         headers: req.headers,
-        body: req.body,
+        body: fetchBody,
         signal: effectiveSignal,
         credentials: options.credentials ?? this.config.credentials,
         mode: options.mode ?? this.config.mode,
         keepalive: options.keepalive ?? this.config.keepalive,
-      });
+        redirect: options.redirect ?? this.config.redirect,
+        ...extraInit,
+      } as RequestInit);
     } catch (err) {
       clearTimeout(timeoutId);
 
@@ -699,6 +866,7 @@ export class Http {
         isAborted,
         isTimeout,
         isNetwork,
+        request: req,
       });
     } finally {
       clearTimeout(timeoutId);
@@ -715,6 +883,8 @@ export class Http {
         status: response.status,
         body: parsedBody,
         response,
+        headers: headersToObject(response.headers),
+        request: req,
       });
     }
 
@@ -732,23 +902,17 @@ export class Http {
       request: req,
     };
 
-    // ── After-interceptors (success branch) ───────────────────────────────────
-    let finalResult = result as HttpResult<unknown>;
-    for (const interceptor of this.afterInterceptors) {
-      const modified = await interceptor(finalResult);
-      if (modified) finalResult = modified;
-    }
-
-    this.emit("response", { request: sanitiseRequestForEvent(req), response: finalResult });
-    return finalResult as HttpResult<T>;
+    return this.runAfterInterceptors<T>(result, replayCtx, isReplay, req);
   }
 
   private async errorResult<T>(
     err: HttpError,
     options: RequestOptions,
     req: OutgoingRequest,
+    replayCtx: ReplayCtx,
+    isReplay: boolean,
   ): Promise<HttpResult<T>> {
-    let result: HttpResult<T> = {
+    const errorRes: HttpResult<T> = {
       data: null,
       error: err,
       status: err.status,
@@ -757,20 +921,54 @@ export class Http {
       request: req,
     };
 
-    // ── After-interceptors (error branch) — allows global error transformation ─
+    const finalResult = await this.runAfterInterceptors<T>(errorRes, replayCtx, isReplay, req);
+
+    if (options.throw) throw finalResult.error ?? err;
+
+    return finalResult;
+  }
+
+  /**
+   * Run all after-interceptors on `result`, providing each with a `replay()` context.
+   *
+   * `replay()` re-fires the original request from scratch (fresh auth, before-interceptors).
+   * When `isReplay` is true, `replay()` is a no-op that returns the current result — this
+   * prevents infinite loops when a token-refresh interceptor would otherwise call replay()
+   * on the already-replayed request.
+   */
+  private async runAfterInterceptors<T>(
+    result: HttpResult<T>,
+    replayCtx: ReplayCtx,
+    isReplay: boolean,
+    req: OutgoingRequest,
+  ): Promise<HttpResult<T>> {
     let finalResult = result as HttpResult<unknown>;
+
     for (const interceptor of this.afterInterceptors) {
-      const modified = await interceptor(finalResult);
+      const context: AfterInterceptorContext<unknown> = {
+        replay: isReplay
+          ? async (): Promise<HttpResult<unknown>> => finalResult
+          : (): Promise<HttpResult<unknown>> => this.execute<unknown>(
+              replayCtx.method as HttpMethod,
+              replayCtx.path,
+              replayCtx.data,
+              replayCtx.options,
+              new AbortController().signal,
+              true, // isReplay = true — prevents recursive replays
+            ),
+      };
+
+      const modified = await interceptor(finalResult, context);
       if (modified) finalResult = modified;
     }
 
-    result = finalResult as HttpResult<T>;
+    if (finalResult.error === null) {
+      this.emit("response", { request: sanitiseRequestForEvent(req), response: finalResult });
+    } else {
+      this.emit("error", { request: sanitiseRequestForEvent(req), response: finalResult });
+    }
 
-    this.emit("error", { request: sanitiseRequestForEvent(req), response: finalResult });
-
-    if (options.throw) throw err;
-
-    return result;
+    return finalResult as HttpResult<T>;
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────

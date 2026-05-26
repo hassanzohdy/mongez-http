@@ -1,4 +1,4 @@
-import type { HttpData, HttpParams, HttpResult, RequestOptions } from "./Http.types";
+import type { HttpData, HttpMethod, HttpParams, HttpResult, RequestOptions } from "./Http.types";
 import type { CancellablePromise } from "./cancellable";
 
 export interface ResourceService {
@@ -34,6 +34,18 @@ export interface ResourceService {
     options?: RequestOptions,
   ): CancellablePromise<HttpResult<unknown>>;
 
+  /** Send a non-CRUD action on a specific record. Default method: POST. */
+  action<T = unknown>(
+    id: number | string,
+    actionName: string,
+    data?: HttpData,
+    options?: RequestOptions,
+    method?: HttpMethod,
+  ): CancellablePromise<HttpResult<unknown>>;
+
   /** Build a full path relative to the base route. */
   path(suffix?: string | number): string;
+
+  /** Build a full path for a named action on a record. */
+  actionPath(id: string | number, actionName: string): string;
 }

@@ -54,6 +54,13 @@ export interface HttpRetryConfig {
   jitter?: boolean;
   /** Status codes that trigger a retry. Default: [429, 500, 502, 503, 504]. */
   retryOn?: number[];
+  /**
+   * Called before each retry attempt.
+   * @param attempt 1-based attempt number (1 = first retry).
+   * @param error   The error that triggered the retry.
+   * @param delay   The computed delay in ms before the retry fires.
+   */
+  onRetry?: (attempt: number, error: HttpError, delay: number) => void;
 }
 
 // ─── Interceptors ────────────────────────────────────────────────────────────
@@ -70,8 +77,32 @@ export type BeforeInterceptor = (
   req: OutgoingRequest,
 ) => OutgoingRequest | void | Promise<OutgoingRequest | void>;
 
+// ─── After interceptor context ────────────────────────────────────────────────
+
+export interface AfterInterceptorContext<T = unknown> {
+  /**
+   * Re-fire the original request from scratch — re-runs auth, before-interceptors,
+   * and the full request pipeline with freshly-resolved credentials.
+   *
+   * Typical use case: catch a 401, refresh the token, call `replay()` to retry.
+   *
+   * **Infinite-loop guard:** inside a replayed request's after-interceptors,
+   * `replay()` is a no-op that immediately returns the current result unchanged.
+   *
+   * @example
+   * http.after(async (result, { replay }) => {
+   *   if (result.error?.isUnauthorized) {
+   *     await refreshToken();
+   *     return replay();
+   *   }
+   * });
+   */
+  replay(): Promise<HttpResult<T>>;
+}
+
 export type AfterInterceptor<T = unknown> = (
   result: HttpResult<T>,
+  context: AfterInterceptorContext<T>,
 ) => HttpResult<T> | void | Promise<HttpResult<T> | void>;
 
 // ─── Events ──────────────────────────────────────────────────────────────────
@@ -150,6 +181,16 @@ export interface HttpConfig {
   headers?: Record<string, string>;
 
   /**
+   * Default query parameters appended to every request.
+   * Per-request `params` are merged on top (per-request wins on conflict).
+   *
+   * @example
+   * const http = new Http({ baseURL, params: { api_key: 'xyz', version: 'v2' } });
+   * // Every request automatically includes ?api_key=xyz&version=v2
+   */
+  params?: HttpParams;
+
+  /**
    * Controls whether cookies and HTTP authentication are sent with requests.
    *
    * - `"same-origin"` *(default)* — cookies sent only to same-origin URLs.
@@ -181,6 +222,14 @@ export interface HttpConfig {
    * @default false
    */
   keepalive?: boolean;
+
+  /**
+   * How to handle HTTP redirects.
+   * - `"follow"` *(default)* — automatically follow redirects.
+   * - `"error"` — throw a network error on any redirect.
+   * - `"manual"` — return the redirect response opaquely (status 0) for manual handling.
+   */
+  redirect?: RequestRedirect;
 
   /** Enable/configure response caching for GET requests. */
   cache?: boolean | HttpCacheConfig;
@@ -214,14 +263,43 @@ export interface DownloadProgressEvent {
   percent: number | null;
 }
 
+// ─── Upload progress ─────────────────────────────────────────────────────────
+
+export interface UploadProgressEvent {
+  /** Bytes sent so far. */
+  loaded: number;
+  /**
+   * Total bytes in the request body.
+   * `null` for FormData bodies — the browser doesn't expose the serialized size
+   * until transmission begins. Accurate for string / ArrayBuffer bodies.
+   */
+  total: number | null;
+  /** 0–100, or null when total is unknown. */
+  percent: number | null;
+}
+
 // ─── Streaming ───────────────────────────────────────────────────────────────
 
 /**
- * How each line of a streamed response is parsed.
- * - "sse"    — strips "data: " prefix, skips [DONE] and empty lines, JSON-parses remainder
- * - "ndjson" — skips empty lines, JSON-parses each line
+ * How each line / event of a streamed response is parsed.
+ * - "sse"    — full Server-Sent Events parsing: id/event/data/retry fields,
+ *              multi-line data concatenation, [DONE] skipping, JSON parsing.
+ * - "ndjson" — skips empty lines, JSON-parses each line.
  */
 export type StreamFormat = "sse" | "ndjson";
+
+/**
+ * A parsed Server-Sent Event with all fields.
+ * Yielded by `Http.streamEvents()` when you need the full SSE envelope.
+ */
+export interface SseEvent<T = unknown> {
+  /** The `id:` field. Tracked as `Last-Event-ID` on reconnect. */
+  id?: string;
+  /** The `event:` field (named event type). Undefined for un-named events. */
+  event?: string;
+  /** Parsed data payload. */
+  data: T;
+}
 
 export interface StreamRequestOptions
   extends Omit<
@@ -239,6 +317,24 @@ export interface StreamRequestOptions
    * When provided, overrides the built-in SSE / NDJSON parsers.
    */
   parseLine?: (line: string) => unknown;
+  /**
+   * Automatically reconnect when the SSE stream disconnects.
+   * Default: `false`. Set to `true` to enable proper SSE auto-reconnection.
+   * Reconnections send a `Last-Event-ID` header so the server can resume.
+   * Does NOT reconnect on non-2xx HTTP errors (wrong path, auth failure, etc.).
+   */
+  reconnect?: boolean;
+  /**
+   * Maximum number of reconnection attempts before giving up.
+   * Default: unlimited.
+   */
+  maxReconnectAttempts?: number;
+  /**
+   * Base delay in ms between reconnection attempts.
+   * Overridden by the server's `retry:` directive if present.
+   * Default: 3000.
+   */
+  reconnectDelay?: number;
 }
 
 // ─── Per-request options ─────────────────────────────────────────────────────
@@ -290,6 +386,12 @@ export interface RequestOptions {
    */
   keepalive?: boolean;
 
+  /**
+   * Override the global `redirect` setting for this single request.
+   * See `HttpConfig.redirect` for full documentation.
+   */
+  redirect?: RequestRedirect;
+
   /** Request body — used for DELETE-with-body (bulkDelete) and similar. */
   data?: unknown;
 
@@ -300,8 +402,23 @@ export interface RequestOptions {
   responseType?: ResponseType;
 
   /**
-   * Called each time a chunk arrives.
+   * Called each time a download chunk arrives.
    * When set, the body is read as a stream instead of buffered at once.
    */
   onDownloadProgress?: (event: DownloadProgressEvent) => void;
+
+  /**
+   * Called each time a chunk of the request body is sent.
+   *
+   * **Accurate progress** is available for `string` and `ArrayBuffer` bodies
+   * (the body is wrapped in a `ReadableStream` and chunked at 64 KiB intervals).
+   *
+   * **FormData bodies** do not support accurate progress because the browser
+   * serializes them internally without exposing the size. No events will fire
+   * for FormData — use a library like `axios` if you need FormData upload progress.
+   *
+   * Requires `duplex: "half"` fetch support (Chrome 105+, Node.js 18+,
+   * Safari 17.4+). Environments without it fall back to no progress events.
+   */
+  onUploadProgress?: (event: UploadProgressEvent) => void;
 }

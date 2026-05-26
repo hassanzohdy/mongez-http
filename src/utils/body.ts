@@ -1,4 +1,4 @@
-import type { DownloadProgressEvent, ResponseType } from "../Http.types";
+import type { DownloadProgressEvent, ResponseType, UploadProgressEvent } from "../Http.types";
 
 type BodyResult = {
   body: BodyInit | undefined;
@@ -78,6 +78,67 @@ export async function parseBody(
   } catch {
     return null;
   }
+}
+
+// ─── Upload progress ─────────────────────────────────────────────────────────
+
+const UPLOAD_CHUNK_SIZE = 65536; // 64 KiB
+
+/**
+ * Wrap a request body in a ReadableStream that fires progress events as chunks
+ * pass through. Returns the original body unchanged for types that cannot be
+ * streamed (FormData, Blob), with no events fired for those types.
+ *
+ * When the body is wrapped as a ReadableStream, the caller must add
+ * `duplex: "half"` to the fetch() options (required by the Fetch spec for
+ * half-duplex streaming — Chrome 105+, Node.js 18+, Safari 17.4+).
+ */
+export function wrapBodyWithProgress(
+  body: BodyInit | undefined,
+  onProgress: (event: UploadProgressEvent) => void,
+): { body: BodyInit | undefined; duplex?: "half" } {
+  if (!body || typeof ReadableStream === "undefined") {
+    return { body };
+  }
+
+  // Convert to Uint8Array for types where we know the full size.
+  let bytes: Uint8Array | null = null;
+
+  if (typeof body === "string") {
+    bytes = new TextEncoder().encode(body);
+  } else if (body instanceof ArrayBuffer) {
+    bytes = new Uint8Array(body);
+  } else if (ArrayBuffer.isView(body) && !(body instanceof DataView)) {
+    bytes = new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
+  }
+
+  // FormData / Blob: can't determine size; skip progress (documented limitation).
+  if (!bytes) {
+    return { body };
+  }
+
+  const total = bytes.byteLength;
+  let offset = 0;
+
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller): void {
+      if (offset >= total) {
+        controller.close();
+        return;
+      }
+      const end = Math.min(offset + UPLOAD_CHUNK_SIZE, total);
+      const chunk = bytes!.subarray(offset, end);
+      offset += chunk.byteLength;
+      controller.enqueue(chunk);
+      onProgress({
+        loaded: offset,
+        total,
+        percent: Math.round((offset / total) * 100),
+      });
+    },
+  });
+
+  return { body: stream, duplex: "half" };
 }
 
 /**

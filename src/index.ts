@@ -24,6 +24,7 @@ export { makeCancellable } from "./cancellable";
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type {
   AfterInterceptor,
+  AfterInterceptorContext,
   BeforeInterceptor,
   CacheDriver,
   DownloadProgressEvent,
@@ -40,8 +41,10 @@ export type {
   OutgoingRequest,
   RequestOptions,
   ResponseType,
+  SseEvent,
   StreamFormat,
   StreamRequestOptions,
+  UploadProgressEvent,
 } from "./Http.types";
 
 export type { ResourceService } from "./Resource.types";

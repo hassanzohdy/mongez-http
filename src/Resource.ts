@@ -1,6 +1,6 @@
 import concatRoute from "@mongez/concat-route";
 import type { Http } from "./Http";
-import type { HttpData, HttpParams, HttpResult, RequestOptions } from "./Http.types";
+import type { HttpData, HttpMethod, HttpParams, HttpResult, RequestOptions } from "./Http.types";
 import type { CancellablePromise } from "./cancellable";
 import { getCurrentHttp } from "./current-http";
 import type { ResourceService } from "./Resource.types";
@@ -126,6 +126,29 @@ export class Resource implements ResourceService {
     return this.http.patch<T>(this.path(id), { ...options, data: body });
   }
 
+  /**
+   * Send a non-CRUD action on a specific record.
+   *
+   * @example
+   * // POST /users/42/activate
+   * await users.action(42, 'activate');
+   *
+   * // POST /orders/5/refund  { amount: 100 }
+   * await orders.action(5, 'refund', { amount: 100 });
+   *
+   * // PATCH /posts/1/publish
+   * await posts.action(1, 'publish', undefined, {}, 'PATCH');
+   */
+  action<T = unknown>(
+    id: number | string,
+    actionName: string,
+    data?: HttpData,
+    options?: RequestOptions,
+    method: HttpMethod = "POST",
+  ): CancellablePromise<HttpResult<T>> {
+    return this.http.request<T>(method, this.actionPath(id, actionName), data, options);
+  }
+
   // ─── Utilities ───────────────────────────────────────────────────────────────
 
   /**
@@ -138,5 +161,15 @@ export class Resource implements ResourceService {
    */
   path(suffix: string | number = ""): string {
     return concatRoute(this.route, String(suffix));
+  }
+
+  /**
+   * Build a path for a named action on a specific record.
+   *
+   * @example
+   * this.actionPath(42, 'activate')   // "/users/42/activate"
+   */
+  actionPath(id: string | number, actionName: string): string {
+    return concatRoute(this.path(id), actionName);
   }
 }
