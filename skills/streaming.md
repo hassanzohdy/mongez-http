@@ -6,20 +6,28 @@
 http.stream<T>(path: string, options?: StreamRequestOptions): CancellableAsyncIterable<T>
 ```
 
-Opens a persistent connection and yields parsed chunks. Cancellable at any time via `.cancel()`.
+Opens a streaming connection and yields parsed chunks. Cancellable at any time via
+`.cancel()`. The stream **never throws** — errors are caught, the iteration ends,
+and the `HttpError` is stored on `stream.error`. Auto-reconnect is **opt-in**
+(`reconnect: true`); by default the stream ends after the first disconnect.
 
 ### StreamRequestOptions
 
 ```ts
 interface StreamRequestOptions {
-  method?: HttpMethod       // default "GET" — use "POST" for chat-style APIs
-  data?: HttpData           // body for POST streams
-  format?: StreamFormat     // "sse" (default) | "ndjson"
+  method?: HttpMethod          // default "GET" — use "POST" for chat-style APIs
+  data?: HttpData              // body for POST streams
+  format?: StreamFormat        // "sse" (default) | "ndjson"
   parseLine?: (line: string) => unknown   // custom parser; return undefined to skip line
   params?: HttpParams
   headers?: Record<string, string>
   signal?: AbortSignal
   timeout?: number
+
+  // SSE auto-reconnect (does NOT reconnect on non-2xx HTTP errors)
+  reconnect?: boolean              // default false — set true to enable auto-reconnect
+  maxReconnectAttempts?: number    // default Infinity
+  reconnectDelay?: number          // default 3000 ms; server `retry:` directive overrides
 }
 ```
 
@@ -58,7 +66,7 @@ for await (const item of http.stream('/feed', {
 })) { ... }
 ```
 
-### Cancellation
+### Cancellation & errors
 
 ```ts
 const stream = http.stream('/chat', { method: 'POST', data: body });
@@ -68,6 +76,12 @@ stream.cancel('user stopped');
 
 for await (const chunk of stream) {
   // iteration ends silently when cancelled
+}
+
+// Stream never throws — check `.error` after the loop instead.
+if (stream.error) {
+  if (stream.error.isUnauthorized) redirect('/login');
+  else                              showError(stream.error.message);
 }
 ```
 

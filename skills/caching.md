@@ -9,6 +9,7 @@ interface CacheDriver {
   get<T = unknown>(key: string): Promise<T | null | undefined>
   set(key: string, value: unknown, ttl?: number): Promise<void> | void
   remove?(key: string): Promise<void> | void
+  clear?(): Promise<void> | void   // required for `http.invalidateAll()`
 }
 ```
 

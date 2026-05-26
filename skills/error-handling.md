@@ -7,6 +7,8 @@ class HttpError extends Error {
   status: number | null        // null for network/abort/timeout
   body: unknown                // parsed response body
   response: Response | null
+  headers: Record<string, string> | null  // null when no response was received
+  request: OutgoingRequest | null         // the outgoing request that produced this error
   isAborted: boolean
   isTimeout: boolean
   isNetwork: boolean
@@ -20,6 +22,7 @@ class HttpError extends Error {
   get isValidationError(): boolean // 422
   get isRateLimited(): boolean     // 429
 
+  // Omits `request` (may contain Authorization / Cookie headers).
   toJSON(): Record<string, unknown>
 }
 ```
@@ -28,8 +31,8 @@ class HttpError extends Error {
 
 ```ts
 type HttpResult<T> =
-  | { data: T;    error: null;      status: number;       headers: Record<string, string>;       request: OutgoingRequest; response: Response }
-  | { data: null; error: HttpError; status: number | null; headers: Record<string, string> | null; request: OutgoingRequest; response: Response | null }
+  | { data: T;    error: null;      status: number;       response: Response;        headers: Record<string, string>;       request: OutgoingRequest }
+  | { data: null; error: HttpError; status: number | null; response: Response | null; headers: Record<string, string> | null; request: OutgoingRequest }
 ```
 
 ## Default pattern — destructure result

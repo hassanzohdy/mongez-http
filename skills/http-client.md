@@ -21,6 +21,13 @@ class Http {
    */
   request<T>(method: HttpMethod | string, path: string, data?: HttpData, options?: RequestOptions): CancellablePromise<HttpResult<T>>
 
+  // Streaming — see streaming.md
+  stream<T>(path: string, options?: StreamRequestOptions): CancellableAsyncIterable<T>
+
+  // Concurrent helpers (each returns a CancellablePromise — cancel cancels every inner request)
+  all<T>(requests: CancellablePromise<T>[]): CancellablePromise<T[]>     // wait for all, never throws (per-request errors stay on each result)
+  race<T>(requests: CancellablePromise<T>[]): CancellablePromise<T>      // first to settle wins; losers are cancelled
+
   // Cache management
   invalidate(key: string): Promise<void>   // remove a single cache entry by key
   invalidateAll(): Promise<void>           // clear all cache entries (requires driver.clear())
@@ -49,9 +56,23 @@ interface HttpConfig {
   putMethodKey?: string        // default "_method"
   timeout?: number             // ms, no timeout by default
   headers?: Record<string, string>
+  params?: HttpParams          // default query params merged into every request
   cache?: boolean | HttpCacheConfig
   retry?: HttpRetryConfig
   publishKey?: string          // default "published" — used by Resource.publish()
+
+  // Fetch-native options forwarded to every fetch() call (per-request overrides exist)
+  credentials?: RequestCredentials   // "same-origin" | "include" | "omit"
+  mode?: RequestMode                 // "cors" | "no-cors" | "same-origin" | "navigate"
+  keepalive?: boolean                // default false — body capped at 64 KB
+  redirect?: RequestRedirect         // "follow" | "error" | "manual"
+  fetchCache?: RequestCache          // browser HTTP cache directive — distinct from `cache`
+
+  // Custom body serializer (e.g. MessagePack/CBOR). FormData/Blob/string pass through.
+  serializer?: (data: unknown) => { body: BodyInit; contentType: string }
+
+  // Custom GET deduplication key — default keys by URL + serialised params.
+  dedupeKey?: (url: string, params?: HttpParams) => string
 }
 ```
 
@@ -70,6 +91,14 @@ interface RequestOptions {
   data?: unknown                                          // body for PATCH / DELETE and any method needing a body
   responseType?: 'json' | 'text' | 'blob' | 'arrayBuffer' // default: auto-detect from Content-Type
   onDownloadProgress?: (event: DownloadProgressEvent) => void
+  onUploadProgress?: (event: UploadProgressEvent) => void // string/ArrayBuffer bodies only — FormData not supported
+
+  // Per-request overrides of the fetch-native HttpConfig fields
+  credentials?: RequestCredentials
+  mode?: RequestMode
+  keepalive?: boolean
+  redirect?: RequestRedirect
+  fetchCache?: RequestCache
 }
 ```
 

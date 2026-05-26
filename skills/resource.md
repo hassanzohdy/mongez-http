@@ -12,13 +12,24 @@ class Resource {
   get<T>(id: number | string, options?: RequestOptions): CancellablePromise<HttpResult<T>>
   create<T>(data: HttpData, options?: RequestOptions): CancellablePromise<HttpResult<T>>
   update<T>(id: number | string, data: HttpData, options?: RequestOptions): CancellablePromise<HttpResult<T>>
-  patch<T>(id: number | string, data: HttpData, options?: RequestOptions): CancellablePromise<HttpResult<T>>
+  // PATCH body goes via `options.data` (no separate data argument).
+  patch<T>(id: number | string, options?: RequestOptions): CancellablePromise<HttpResult<T>>
   delete<T>(id: number | string, options?: RequestOptions): CancellablePromise<HttpResult<T>>
   bulkDelete<T>(data: HttpData, options?: RequestOptions): CancellablePromise<HttpResult<T>>
   publish<T>(id, published, publishKey?, options?): CancellablePromise<HttpResult<T>>
 
-  path(suffix?: string | number): string   // concatRoute(route, suffix)
-  useHttp(instance: Http): this            // override Http instance for this resource
+  // Non-CRUD action on a specific record — POST by default, override via `method`.
+  action<T>(
+    id: number | string,
+    actionName: string,
+    data?: HttpData,
+    options?: RequestOptions,
+    method?: HttpMethod,
+  ): CancellablePromise<HttpResult<T>>
+
+  path(suffix?: string | number): string         // concatRoute(route, suffix)
+  actionPath(id: string | number, actionName: string): string
+  useHttp(instance: Http): this                  // override Http instance for this resource
 }
 ```
 
@@ -46,7 +57,7 @@ const { data: newUser } = await usersResource.create<User>({ name: 'Alice', emai
 // Update (PUT)
 const { data: updated } = await usersResource.update<User>(42, { name: 'Alice Updated' });
 
-// Partial update (PATCH)
+// Partial update (PATCH) — body is supplied via `options.data`
 await usersResource.patch(42, { data: { avatar: 'url' } });
 
 // Delete
@@ -58,6 +69,11 @@ await usersResource.bulkDelete({ ids: [1, 2, 3] });
 // Publish / Unpublish
 await usersResource.publish(42, true);
 await usersResource.publish(42, false, 'active'); // custom key
+
+// Non-CRUD actions on a specific record
+await usersResource.action(42, 'activate');                       // POST   /users/42/activate
+await usersResource.action(5, 'refund', { amount: 100 });         // POST   /orders/5/refund
+await usersResource.action(1, 'publish', undefined, {}, 'PATCH'); // PATCH  /posts/1/publish
 ```
 
 ## Http resolution
