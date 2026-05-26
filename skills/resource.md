@@ -47,7 +47,7 @@ const { data: newUser } = await usersResource.create<User>({ name: 'Alice', emai
 const { data: updated } = await usersResource.update<User>(42, { name: 'Alice Updated' });
 
 // Partial update (PATCH)
-await usersResource.patch(42, { avatar: 'url' });
+await usersResource.patch(42, { data: { avatar: 'url' } });
 
 // Delete
 await usersResource.delete(42);

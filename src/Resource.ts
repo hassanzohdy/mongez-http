@@ -88,10 +88,9 @@ export class Resource implements ResourceService {
 
   patch<T = unknown>(
     id: number | string,
-    data: HttpData,
     options?: RequestOptions,
   ): CancellablePromise<HttpResult<T>> {
-    return this.http.patch<T>(this.path(id), data, options);
+    return this.http.patch<T>(this.path(id), options);
   }
 
   delete<T = unknown>(
@@ -124,7 +123,7 @@ export class Resource implements ResourceService {
   ): CancellablePromise<HttpResult<T>> {
     const key = publishKey ?? this.http.getConfig().publishKey ?? "published";
     const body = typeof published === "object" ? published : { [key]: published };
-    return this.http.patch<T>(this.path(id), body, options);
+    return this.http.patch<T>(this.path(id), { ...options, data: body });
   }
 
   // ─── Utilities ───────────────────────────────────────────────────────────────

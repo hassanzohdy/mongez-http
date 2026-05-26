@@ -39,6 +39,12 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function headersToObject(headers: Headers): Record<string, string> {
+  const result: Record<string, string> = {};
+  headers.forEach((value, key) => { result[key] = value; });
+  return result;
+}
+
 function buildCacheKey(url: string, params?: HttpParams): string {
   const qs = params ? JSON.stringify(params) : "";
   return `http:${url}${qs ? `:${qs}` : ""}`;
@@ -163,10 +169,9 @@ export class Http {
 
   patch<T = unknown>(
     path: string,
-    data?: HttpData,
     options?: RequestOptions,
   ): CancellablePromise<HttpResult<T>> {
-    return this.request<T>("PATCH", path, data, options);
+    return this.request<T>("PATCH", path, options?.data as HttpData | undefined, options);
   }
 
   delete<T = unknown>(
@@ -458,7 +463,7 @@ export class Http {
           error: null,
           status: 200,
           response: new Response(),
-          headers: new Headers(),
+          headers: {},
           request: req,
         };
         return result;
@@ -586,7 +591,7 @@ export class Http {
       error: null,
       status: response.status,
       response,
-      headers: response.headers,
+      headers: headersToObject(response.headers),
       request: req,
     };
 
@@ -615,7 +620,7 @@ export class Http {
       error: err,
       status: err.status,
       response: err.response,
-      headers: err.response?.headers ?? null,
+      headers: err.response ? headersToObject(err.response.headers) : null,
       request: req,
     };
   }

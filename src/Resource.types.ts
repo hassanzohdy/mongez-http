@@ -17,8 +17,8 @@ export interface ResourceService {
   /** Replace an existing record (PUT). */
   update(id: number | string, data: HttpData, options?: RequestOptions): CancellablePromise<HttpResult<unknown>>;
 
-  /** Partial update (PATCH). */
-  patch(id: number | string, data: HttpData, options?: RequestOptions): CancellablePromise<HttpResult<unknown>>;
+  /** Partial update (PATCH). Pass body via options.data. */
+  patch(id: number | string, options?: RequestOptions): CancellablePromise<HttpResult<unknown>>;
 
   /** Delete a record. */
   delete(id: number | string, options?: RequestOptions): CancellablePromise<HttpResult<unknown>>;

@@ -8,7 +8,7 @@ class Http {
   get<T>(path: string, options?: RequestOptions): CancellablePromise<HttpResult<T>>
   post<T>(path: string, data?: HttpData, options?: RequestOptions): CancellablePromise<HttpResult<T>>
   put<T>(path: string, data?: HttpData, options?: RequestOptions): CancellablePromise<HttpResult<T>>
-  patch<T>(path: string, data?: HttpData, options?: RequestOptions): CancellablePromise<HttpResult<T>>
+  patch<T>(path: string, options?: RequestOptions): CancellablePromise<HttpResult<T>>  // body via options.data
   delete<T>(path: string, options?: RequestOptions): CancellablePromise<HttpResult<T>>
   head(path: string, options?: RequestOptions): CancellablePromise<HttpResult<null>>
 
@@ -54,7 +54,9 @@ interface RequestOptions {
   retry?: boolean | Partial<HttpRetryConfig>
   throw?: boolean                                         // default false
   timeout?: number
-  data?: unknown                                          // body for DELETE-with-body
+  data?: unknown                                          // body for PATCH / DELETE and any method needing a body
+  responseType?: 'json' | 'text' | 'blob' | 'arrayBuffer' // default: auto-detect from Content-Type
+  onDownloadProgress?: (event: DownloadProgressEvent) => void
 }
 ```
 

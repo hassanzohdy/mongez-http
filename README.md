@@ -79,9 +79,13 @@ const { data, error } = await http.get<User[]>('/users');
 // POST
 const { data: user } = await http.post<User>('/users', { name: 'Alice' });
 
-// PUT / PATCH / DELETE
+// PUT
 await http.put('/users/1', { name: 'Alice' });
-await http.patch('/users/1', { name: 'Alice' });
+
+// PATCH — data goes inside options
+await http.patch('/users/1', { data: { name: 'Alice' } });
+
+// DELETE
 await http.delete('/users/1');
 ```
 
@@ -336,7 +340,7 @@ Every result carries full context:
 ```ts
 const { data, error, status, headers, request, response } = await http.get('/users');
 
-headers.get('x-request-id');  // response headers
+headers['x-request-id'];      // plain object — direct key access, JSON-serialisable
 request.url;                  // final URL after interceptors
 request.headers;              // headers that were sent
 response;                     // raw Response object
@@ -390,7 +394,7 @@ await users.list({ params: { page: 1 } });  // GET  /users?page=1
 await users.get(42);                         // GET  /users/42
 await users.create({ name: 'Alice' });       // POST /users
 await users.update(42, { name: 'Alice' });   // PUT  /users/42
-await users.patch(42, { verified: true });   // PATCH /users/42
+await users.patch(42, { data: { verified: true } });   // PATCH /users/42
 await users.delete(42);                      // DELETE /users/42
 await users.bulkDelete([1, 2, 3]);           // DELETE /users { ids: [...] }
 await users.publish(42, true);               // PATCH /users/42 { published: true }

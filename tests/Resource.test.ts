@@ -119,7 +119,7 @@ describe("Resource", () => {
   describe("patch()", () => {
     it("PATCH /users/1", async () => {
       const spy = mockFetch({ id: 1 });
-      await users.patch(1, { name: "Bob" });
+      await users.patch(1, { data: { name: "Bob" } });
       const [, init] = spy.mock.calls[0]!;
       expect((init as RequestInit).method).toBe("PATCH");
     });

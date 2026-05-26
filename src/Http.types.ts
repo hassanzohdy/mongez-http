@@ -93,8 +93,8 @@ export type HttpResult<T> =
       error: null;
       status: number;
       response: Response;
-      /** Response headers. */
-      headers: Headers;
+      /** Response headers as a plain object for easy access and serialisation. */
+      headers: Record<string, string>;
       /** The outgoing request that produced this result. */
       request: OutgoingRequest;
     }
@@ -104,7 +104,7 @@ export type HttpResult<T> =
       status: number | null;
       response: Response | null;
       /** Response headers, or null when no response was received. */
-      headers: Headers | null;
+      headers: Record<string, string> | null;
       /** The outgoing request that produced this result. */
       request: OutgoingRequest;
     };

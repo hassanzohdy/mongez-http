@@ -11,15 +11,25 @@ class HttpError extends Error {
   isTimeout: boolean
   isNetwork: boolean
 
-  isClientError(): boolean     // 4xx
-  isServerError(): boolean     // 5xx
-  isUnauthorized(): boolean    // 401
-  isForbidden(): boolean       // 403
-  isNotFound(): boolean        // 404
-  isValidationError(): boolean // 422
-  isRateLimited(): boolean     // 429
+  // Status predicates — getters, no () needed
+  get isClientError(): boolean     // 4xx
+  get isServerError(): boolean     // 5xx
+  get isUnauthorized(): boolean    // 401
+  get isForbidden(): boolean       // 403
+  get isNotFound(): boolean        // 404
+  get isValidationError(): boolean // 422
+  get isRateLimited(): boolean     // 429
+
   toJSON(): Record<string, unknown>
 }
+```
+
+## HttpResult<T>
+
+```ts
+type HttpResult<T> =
+  | { data: T;    error: null;      status: number;       headers: Record<string, string>;       request: OutgoingRequest; response: Response }
+  | { data: null; error: HttpError; status: number | null; headers: Record<string, string> | null; request: OutgoingRequest; response: Response | null }
 ```
 
 ## Default pattern — destructure result
@@ -28,11 +38,11 @@ class HttpError extends Error {
 const { data, error } = await http.get<User>('/users/1');
 
 if (error) {
-  if (error.isNotFound())       console.warn('User not found');
-  else if (error.isUnauthorized()) redirect('/login');
-  else if (error.isValidationError()) showFormErrors(error.body);
-  else if (error.isAborted)     { /* request was cancelled — ignore */ }
-  else                          showGenericError(error.message);
+  if (error.isNotFound)        console.warn('User not found');
+  else if (error.isUnauthorized)    redirect('/login');
+  else if (error.isValidationError) showFormErrors(error.body);
+  else if (error.isAborted)         { /* request was cancelled — ignore */ }
+  else                              showGenericError(error.message);
   return;
 }
 
@@ -46,7 +56,7 @@ console.log(data.name);
 try {
   const { data } = await http.get('/users/1', { throw: true });
 } catch (err) {
-  if (err instanceof HttpError && err.isNotFound()) {
+  if (err instanceof HttpError && err.isNotFound) {
     // handle 404
   }
 }
@@ -63,7 +73,8 @@ if (result.error) {
   result.data   // null — TypeScript knows
   result.error  // HttpError
 } else {
-  result.data   // User — TypeScript knows
-  result.error  // null
+  result.data    // User — TypeScript knows
+  result.error   // null
+  result.headers // Record<string, string>
 }
 ```

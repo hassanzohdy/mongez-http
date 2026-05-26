@@ -45,7 +45,7 @@ const useUsers = (params) =>
 
 ```ts
 http.after((result) => {
-  if (result.error?.isUnauthorized()) {
+  if (result.error?.isUnauthorized) {
     window.location.href = '/login';
   }
 });
@@ -79,7 +79,7 @@ export const ordersResource   = new OrdersResource().useHttp(privateHttp);
 ```ts
 const { data, error } = await usersResource.create(formData);
 
-if (error?.isValidationError()) {
+if (error?.isValidationError) {
   const errors = (error.body as { errors: Record<string, string[]> }).errors;
   // { name: ['The name field is required.'], ... }
 }
