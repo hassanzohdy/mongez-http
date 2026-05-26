@@ -24,18 +24,80 @@ import { parseBody, prepareBody, readBodyWithProgress } from "./utils/body";
 // ─── Module-level helpers ─────────────────────────────────────────────────────
 
 /**
+ * Matches any URL scheme that is NOT http or https.
+ * Used to block javascript:, data:, file:, ftp:, etc.
+ */
+const BLOCKED_SCHEMES = /^(?!https?:\/\/)[a-z][a-z0-9+\-.]*:/i;
+
+/**
+ * Header names/values whose values are redacted before being placed in event payloads.
+ * This prevents credentials from leaking to third-party event listeners / loggers.
+ */
+const SENSITIVE_HEADER_NAMES = new Set([
+  "authorization",
+  "cookie",
+  "set-cookie",
+  "x-api-key",
+  "x-auth-token",
+  "x-csrf-token",
+]);
+
+/**
  * Join a base URL (may include protocol + host) with a path segment.
- * Preserves the protocol scheme — unlike concatRoute which treats everything as a path.
+ * - Blocks non-http(s) schemes when base is empty (javascript:, data:, file:, …).
+ * - Normalises the joined URL via `new URL()` to collapse any `..` path-traversal
+ *   sequences before the string reaches fetch().
  */
 function joinUrl(base: string, path: string): string {
-  if (!base) return path;
-  return base.replace(/\/$/, "") + "/" + path.replace(/^\//, "");
+  if (!base) {
+    if (BLOCKED_SCHEMES.test(path)) {
+      throw new Error(
+        `@mongez/http: Blocked request to unsafe URL scheme — "${path.slice(0, 80)}"`,
+      );
+    }
+    return path;
+  }
+  const joined = base.replace(/\/$/, "") + "/" + path.replace(/^\//, "");
+  // Normalise through the URL parser so "../.." sequences are resolved before fetch sees them.
+  try {
+    return new URL(joined).href;
+  } catch {
+    return joined; // Non-absolute URL (e.g. relative path used in tests) — return as-is.
+  }
 }
 
 function headersToObject(headers: Headers): Record<string, string> {
   const result: Record<string, string> = {};
   headers.forEach((value, key) => { result[key] = value; });
   return result;
+}
+
+/**
+ * Throw if any header name or value contains CR or LF characters.
+ * Defence-in-depth against header injection; most runtimes already validate this,
+ * but failing early with a clear message is better than a cryptic runtime error.
+ */
+function assertSafeHeaders(headers: Record<string, string>): void {
+  for (const [name, value] of Object.entries(headers)) {
+    if (/[\r\n]/.test(name) || /[\r\n]/.test(value)) {
+      throw new Error(
+        `@mongez/http: Header "${name}" contains invalid CR or LF character.`,
+      );
+    }
+  }
+}
+
+/**
+ * Return a copy of `req` with sensitive header values replaced by "[redacted]".
+ * Used when emitting events so third-party listeners (analytics, loggers) never
+ * receive raw credentials.
+ */
+function sanitiseRequestForEvent(req: OutgoingRequest): OutgoingRequest {
+  const safe: Record<string, string> = {};
+  for (const [k, v] of Object.entries(req.headers)) {
+    safe[k] = SENSITIVE_HEADER_NAMES.has(k.toLowerCase()) ? "[redacted]" : v;
+  }
+  return { ...req, headers: safe };
 }
 
 const DEFAULT_RETRY_ON = [429, 500, 502, 503, 504];
@@ -330,7 +392,7 @@ export class Http {
         extraHeaders,
       );
 
-      self.emit("request", { request: req });
+      self.emit("request", { request: sanitiseRequestForEvent(req) });
 
       // ── Fetch ────────────────────────────────────────────────────────────────
       let response: Response;
@@ -344,7 +406,7 @@ export class Http {
       } catch {
         if (controller.signal.aborted) return; // cancelled — end silently
         const err = new HttpError({ message: "Stream network error", isNetwork: true });
-        self.emit("error", { request: req, response: undefined });
+        self.emit("error", { request: sanitiseRequestForEvent(req), response: undefined });
         throw err;
       }
 
@@ -356,7 +418,7 @@ export class Http {
           body: errorBody,
           response,
         });
-        self.emit("error", { request: req, response: undefined });
+        self.emit("error", { request: sanitiseRequestForEvent(req), response: undefined });
         throw err;
       }
 
@@ -375,7 +437,7 @@ export class Http {
           } catch {
             if (controller.signal.aborted) return; // cancelled — end silently
             const err = new HttpError({ message: "Stream read error", isNetwork: true });
-            self.emit("error", { request: req, response: undefined });
+            self.emit("error", { request: sanitiseRequestForEvent(req), response: undefined });
             throw err;
           }
 
@@ -457,6 +519,9 @@ export class Http {
 
     if (authValue) headers["Authorization"] = authValue;
 
+    // Defence-in-depth: reject headers with embedded CR/LF before they reach fetch().
+    assertSafeHeaders(headers);
+
     let req = outgoing;
     for (const interceptor of this.beforeInterceptors) {
       const modified = await interceptor(req);
@@ -510,7 +575,9 @@ export class Http {
     }
 
     // ── Emit "request" (only for real network calls, never for cache hits) ────
-    this.emit("request", { request: req });
+    // Credentials are redacted in the event payload so third-party listeners
+    // (analytics, loggers) never receive raw Authorization / Cookie values.
+    this.emit("request", { request: sanitiseRequestForEvent(req) });
 
     // ── Retry wrapper ─────────────────────────────────────────────────────────
     const retryConfig = this.resolveRetryConfig(options);
@@ -548,9 +615,21 @@ export class Http {
 
         // Optional jitter: multiply by a random factor in [0.5, 1.0] to avoid
         // thundering-herd problems when many clients retry simultaneously.
-        const delay = retryConfig.jitter === true
+        let delay = retryConfig.jitter === true
           ? base * (0.5 + Math.random() * 0.5)
           : base;
+
+        // Respect the Retry-After header (common on 429 responses).
+        // Never wait less than the server explicitly requested.
+        if (err.response) {
+          const retryAfterRaw = err.response.headers.get("Retry-After");
+          if (retryAfterRaw) {
+            const serverDelayMs = parseInt(retryAfterRaw, 10) * 1000;
+            if (!isNaN(serverDelayMs) && serverDelayMs > delay) {
+              delay = serverDelayMs;
+            }
+          }
+        }
 
         await sleep(delay);
         return this.executeWithRetry<T>(req, signal, options, cacheConfig, retryConfig, cacheKey, attempt + 1);
@@ -655,7 +734,7 @@ export class Http {
       if (modified) finalResult = modified;
     }
 
-    this.emit("response", { request: req, response: finalResult });
+    this.emit("response", { request: sanitiseRequestForEvent(req), response: finalResult });
     return finalResult as HttpResult<T>;
   }
 
@@ -682,7 +761,7 @@ export class Http {
 
     result = finalResult as HttpResult<T>;
 
-    this.emit("error", { request: req, response: finalResult });
+    this.emit("error", { request: sanitiseRequestForEvent(req), response: finalResult });
 
     if (options.throw) throw err;
 

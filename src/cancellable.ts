@@ -55,7 +55,7 @@ export function makeCancellable<T>(
     } else {
       externalSignal.addEventListener("abort", () => {
         controller.abort(externalSignal.reason);
-      });
+      }, { once: true }); // { once: true } prevents a permanent listener when the signal is long-lived
     }
   }
 
