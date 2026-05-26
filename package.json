@@ -1,6 +1,6 @@
 {
   "name": "@mongez/http",
-  "version": "3.0.1",
+  "version": "3.0.2",
   "description": "Robust, fetch-based HTTP client for TypeScript. Native fetch, {data,error} result type, per-request abort, caching, interceptors, and a RestfulResource helper.",
   "main": "src/index.ts",
   "author": "hassanzohdy",
