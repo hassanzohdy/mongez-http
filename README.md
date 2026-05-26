@@ -96,6 +96,47 @@ const { data } = await http.get('https://api.example.com/users');
 
 ---
 
+## Request body
+
+`post()`, `put()`, `patch()`, and `delete()` all accept the same `data` argument. The type and `Content-Type` header are determined automatically:
+
+| Value passed | Sent as | `Content-Type` |
+|---|---|---|
+| Plain object / array | `JSON.stringify(value)` | `application/json` |
+| `string` | As-is | _(not set — caller's responsibility)_ |
+| `FormData` | As-is | _(not set — browser adds boundary automatically)_ |
+| `HTMLFormElement` | Converted to `FormData` | _(not set — browser adds boundary automatically)_ |
+
+```ts
+// Object → JSON
+await http.post('/users', { name: 'Alice', role: 'admin' });
+
+// FormData — file upload
+const form = new FormData();
+form.append('avatar', file);
+form.append('name', 'Alice');
+await http.post('/users', form);
+
+// HTMLFormElement — pass the DOM element directly
+const el = document.querySelector<HTMLFormElement>('#signup-form')!;
+await http.post('/users', el);
+
+// Raw string — e.g. XML or custom payload
+await http.post('/ingest', '<event type="click"/>', {
+  headers: { 'Content-Type': 'application/xml' },
+});
+```
+
+> **FormData tip:** never set `Content-Type` manually when sending `FormData`. The browser must set it so the multipart boundary is included — if you override it the server will fail to parse the body.
+
+### DELETE with a body
+
+```ts
+await http.delete('/users', { data: { ids: [1, 2, 3] } });
+```
+
+---
+
 ## Configuration
 
 ```ts
@@ -190,23 +231,75 @@ useEffect(() => {
 
 ## Interceptors & events
 
+### Interceptors
+
+Interceptors run on every request and can **mutate** the request or result.
+
 ```ts
-// Mutate outgoing request
+// before — modify the outgoing request (add headers, inject tokens, etc.)
 http.before((req) => ({
   ...req,
   headers: { ...req.headers, 'X-Request-Id': crypto.randomUUID() },
 }));
 
-// Transform every successful result
-http.after((result) => {
-  if (!result.error) analytics.track(result.status);
+// before — async (e.g. refresh a token before sending)
+http.before(async (req) => {
+  const token = await getAccessToken();
+  return { ...req, headers: { ...req.headers, Authorization: `Bearer ${token}` } };
 });
 
-// Event bus
-http.on('error', ({ request, response }) => {
-  logger.error(request.url, response?.error?.message);
+// after — transform or inspect every result
+http.after((result) => {
+  if (!result.error) analytics.track({ url: result.request.url, status: result.status });
+});
+
+// after — unwrap a nested response shape
+http.after<{ data: unknown }>((result) => {
+  if (result.data && 'data' in (result.data as object)) {
+    return { ...result, data: (result.data as { data: unknown }).data };
+  }
 });
 ```
+
+`before` interceptors receive the `OutgoingRequest` after auth is applied. `after` interceptors receive the full `HttpResult<T>` including `headers` and `request`. Both can be async and both are chainable — call `.before()` / `.after()` multiple times to stack them.
+
+### Events
+
+Events are for **observation** — logging, analytics, telemetry. They cannot mutate anything.
+
+| Event | Fires | Payload |
+|---|---|---|
+| `"request"` | After interceptors, just before `fetch()` | `{ request }` |
+| `"response"` | After a successful response and after-interceptors | `{ request, response }` |
+| `"error"` | When a request fails for any reason | `{ request, response: undefined }` |
+
+```ts
+// Log every outgoing request
+http.on('request', ({ request }) => {
+  console.log(`→ ${request.method} ${request.url}`);
+});
+
+// Track response times / analytics
+http.on('response', ({ request, response }) => {
+  analytics.track({ url: request.url, status: response!.status });
+});
+
+// Global error reporting
+http.on('error', ({ request }) => {
+  logger.error(`✗ ${request.url}`);
+});
+```
+
+Unsubscribe by passing the same handler reference to `.off()`:
+
+```ts
+const handler = ({ request }) => console.log(request.url);
+http.on('request', handler);
+// later…
+http.off('request', handler);
+```
+
+> **Note:** With retry enabled, `"request"` fires once per attempt. On error, the `HttpError` is on the result returned by the promise — not on the event payload.
 
 ---
 
