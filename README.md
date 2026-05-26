@@ -1,213 +1,306 @@
+<div align="center">
+
 # @mongez/http
 
-Robust, native-`fetch` HTTP client for TypeScript.
+**A fetch-based TypeScript HTTP client built for real apps.**
 
-- **`{data, error}` result** — no try/catch clutter
-- **Per-request `.cancel()`** — every method returns a CancellablePromise
-- **Typed errors** — `HttpError` with `.isAborted`, `.isTimeout`, `.isNetwork`, status predicates
-- **Caching** — GET caching with any `CacheDriver`-compatible store
-- **Retry** — configurable attempts, delay, and exponential backoff
-- **Interceptors** — before-request and after-response hooks
-- **`Resource` class** — RESTful CRUD helper with zero boilerplate
-- **Zero heavy deps** — native `fetch` only, one small runtime dep
+[![npm version](https://img.shields.io/npm/v/@mongez/http?color=0ea5e9&label=npm&logo=npm)](https://www.npmjs.com/package/@mongez/http)
+[![License](https://img.shields.io/npm/l/@mongez/http?color=22c55e)](https://github.com/hassanzohdy/mongez-http/blob/main/LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5%2B-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Bundle size](https://img.shields.io/bundlephobia/minzip/@mongez/http?color=f97316&label=minzipped)](https://bundlephobia.com/package/@mongez/http)
+[![Tests](https://img.shields.io/badge/tests-80%20passing-22c55e?logo=vitest)](https://github.com/hassanzohdy/mongez-http)
 
----
-
-## Install
-
-```bash
-npm i @mongez/http
-```
+</div>
 
 ---
 
-## Bootstrap
+## Why @mongez/http?
+
+Most HTTP libraries require a try/catch on every request — or force you to handle `undefined` data paths. `@mongez/http` returns a clean discriminated union: you always get `data` **or** `error`, never both, never neither.
 
 ```ts
-// src/http.ts
-import { Http, setCurrentHttp } from '@mongez/http';
-
-export const http = new Http({
-  baseURL: import.meta.env.VITE_API_URL,
-  auth: () => localStorage.getItem('token')
-    ? `Bearer ${localStorage.getItem('token')}`
-    : null,
-});
-
-setCurrentHttp(http); // lets Resource classes find the instance lazily
-```
-
----
-
-## Making requests
-
-All methods return a `CancellablePromise<HttpResult<T>>`.
-
-```ts
-import { http } from './http';
-import type { User } from './types';
-
 const { data, error } = await http.get<User[]>('/users');
 
 if (error) {
-  console.error(error.message, error.status);
-  return;
+  if (error.isNotFound)        return null;
+  if (error.isUnauthorized)    return redirect('/login');
+  if (error.isValidationError) return showErrors(error.body);
+  return showToast(error.message);
 }
 
-// data is User[] here — TypeScript knows
-console.log(data);
-```
-
-Available methods: `get`, `post`, `put`, `patch`, `delete`, `head`.
-
----
-
-## HttpResult<T>
-
-```ts
-type HttpResult<T> =
-  | { data: T;    error: null;      status: number;      response: Response }
-  | { data: null; error: HttpError; status: number|null; response: Response|null }
-```
-
-Destructure and check `error` first. TypeScript narrows `data` to `T` in the else-branch.
-
----
-
-## Query params
-
-```ts
-// Simple
-await http.get('/users', { params: { page: 1, limit: 20 } });
-// → GET /users?page=1&limit=20
-
-// Array values — repeated keys
-await http.get('/posts', { params: { ids: [1, 2, 3] } });
-// → GET /posts?ids=1&ids=2&ids=3
-
-// null / undefined values are omitted
-await http.get('/search', { params: { q: 'hello', type: null } });
-// → GET /search?q=hello
+// ✅ data is User[] here — fully typed, no cast needed
 ```
 
 ---
 
-## Cancellation
+## Features
 
-```ts
-const req = http.get<User[]>('/users');
+| | |
+|---|---|
+| **Zero dependencies** | Built on native `fetch` — no Axios, no XMLHttpRequest |
+| **`{data, error}` result** | Typed discriminated union — no try/catch on every call |
+| **Per-request cancel** | Every promise has `.cancel()` and `.signal` |
+| **Typed errors** | `HttpError` with status predicates: `isNotFound`, `isUnauthorized`, `isValidationError`, … |
+| **Streaming** | SSE + NDJSON with `.stream()` — cancellable async iterable |
+| **Response metadata** | Result includes `headers`, `request`, `response`, `status` |
+| **Smart body parsing** | Auto-detects JSON, binary blobs, text from Content-Type |
+| **Interceptors** | `before` / `after` hooks, event bus (`request`, `response`, `error`) |
+| **Caching** | GET-only, pluggable driver, per-request TTL & key overrides |
+| **Retry** | Configurable attempts, delay, exponential backoff, status allowlist |
+| **Download progress** | `onDownloadProgress` callback with `loaded`, `total`, `percent` |
+| **`responseType`** | Explicit `'json' \| 'text' \| 'blob' \| 'arrayBuffer'` decode control |
+| **`putToPost`** | Laravel-style `_method` override for file upload compatibility |
+| **`Resource` class** | RESTful CRUD helper — list, get, create, update, delete, bulkDelete, publish |
 
-// Cancel it
-req.cancel('component unmounted');
+---
 
-const { data, error } = await req;
-// error.isAborted === true
+## Installation
+
+```bash
+npm install @mongez/http
+# or
+yarn add @mongez/http
+# or
+pnpm add @mongez/http
 ```
 
-Pass an external signal (React Query / `useEffect`):
+---
+
+## Quick start
 
 ```ts
-const { data } = await http.get('/users', { signal: abortController.signal });
+import { Http } from '@mongez/http';
+
+const http = new Http({ baseURL: 'https://api.example.com' });
+
+// GET — returns { data, error, status, headers, request, response }
+const { data, error } = await http.get<User[]>('/users');
+
+// POST
+const { data: user } = await http.post<User>('/users', { name: 'Alice' });
+
+// PUT / PATCH / DELETE
+await http.put('/users/1', { name: 'Alice' });
+await http.patch('/users/1', { name: 'Alice' });
+await http.delete('/users/1');
 ```
 
-React cleanup example:
+### Using the default instance
 
 ```ts
-useEffect(() => {
-  const req = http.get<User[]>('/users');
-  req.then(({ data, error }) => {
-    if (!error?.isAborted) setUsers(data ?? []);
-  });
-  return () => req.cancel('unmounted');
-}, []);
+import { http } from '@mongez/http';
+
+// No baseURL — just pass the full URL
+const { data } = await http.get('https://api.example.com/users');
+```
+
+---
+
+## Configuration
+
+```ts
+const http = new Http({
+  baseURL: 'https://api.example.com',
+
+  // Static token or per-request factory
+  auth: 'Bearer my-token',
+  // auth: (req) => store.getState().token,
+
+  timeout: 10_000,          // ms — applies to every request
+  headers: { 'X-App': '1' },
+
+  // Retry on server errors
+  retry: { attempts: 3, delay: 300, backoff: true, retryOn: [429, 500, 502, 503, 504] },
+
+  // Response caching (GET only)
+  cache: { driver: myDriver, ttl: 60 },
+
+  // Laravel-style PUT-as-POST for FormData uploads
+  putToPost: true,
+  putMethodKey: '_method',
+});
 ```
 
 ---
 
 ## Error handling
 
+Every failed request returns an `HttpError` — never throws (unless you pass `throw: true`).
+
 ```ts
-const { data, error } = await http.get('/users/99');
+const { data, error } = await http.get('/resource');
 
 if (error) {
-  if (error.isNotFound())        return null;
-  if (error.isUnauthorized())    return redirect('/login');
-  if (error.isValidationError()) return showErrors(error.body);
-  if (error.isNetwork)           return toast('Check your connection');
-  if (error.isTimeout)           return toast('Request timed out');
-  throw error; // re-throw unexpected errors
+  error.status          // number | null
+  error.body            // parsed response body
+  error.message         // human-readable message
+  error.response        // raw Response | null
+  error.isAborted       // request was cancelled
+  error.isTimeout       // exceeded timeout
+  error.isNetwork       // DNS / CORS / no connection
+
+  // Status predicates — getters, no () needed
+  error.isClientError     // 4xx
+  error.isServerError     // 5xx
+  error.isUnauthorized    // 401
+  error.isForbidden       // 403
+  error.isNotFound        // 404
+  error.isValidationError // 422
+  error.isRateLimited     // 429
 }
 ```
 
-Throw mode (for try/catch boundaries):
+### Throw mode
 
 ```ts
-const { data } = await http.get('/users/99', { throw: true });
-// throws HttpError on failure
+try {
+  const { data } = await http.get('/resource', { throw: true });
+} catch (err) {
+  if (err instanceof HttpError && err.isNotFound) { ... }
+}
 ```
-
-### HttpError properties
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `status` | `number \| null` | HTTP status, or null for network errors |
-| `body` | `unknown` | Parsed response body |
-| `isAborted` | `boolean` | Cancelled via `.cancel()` |
-| `isTimeout` | `boolean` | Exceeded timeout limit |
-| `isNetwork` | `boolean` | DNS / CORS / no connection |
-
-Predicate methods: `isClientError()`, `isServerError()`, `isUnauthorized()`, `isForbidden()`, `isNotFound()`, `isValidationError()`, `isRateLimited()`.
 
 ---
 
-## Resource class
+## Cancellation
+
+Every request returns a `CancellablePromise` with `.cancel()` and `.signal`:
 
 ```ts
-import { Resource } from '@mongez/http';
-import type { User } from './types';
+const req = http.get('/slow-endpoint');
 
-class UsersResource extends Resource {
+// Cancel from anywhere
+req.cancel('user navigated away');
+
+const { data, error } = await req;
+// error.isAborted === true
+```
+
+### React + useEffect
+
+```ts
+useEffect(() => {
+  const req = http.get<User[]>('/users');
+  req.then(({ data }) => setUsers(data ?? []));
+  return () => req.cancel('unmounted');
+}, []);
+```
+
+---
+
+## Interceptors & events
+
+```ts
+// Mutate outgoing request
+http.before((req) => ({
+  ...req,
+  headers: { ...req.headers, 'X-Request-Id': crypto.randomUUID() },
+}));
+
+// Transform every successful result
+http.after((result) => {
+  if (!result.error) analytics.track(result.status);
+});
+
+// Event bus
+http.on('error', ({ request, response }) => {
+  logger.error(request.url, response?.error?.message);
+});
+```
+
+---
+
+## Streaming
+
+```ts
+for await (const chunk of http.stream<ChatChunk>('/chat', {
+  method: 'POST',
+  data: { model: 'gpt-4o', messages },
+})) {
+  process(chunk.choices[0].delta.content);
+}
+```
+
+Supports `"sse"` (default) and `"ndjson"` formats, chunked delivery, and cancellation:
+
+```ts
+const stream = http.stream('/chat', { method: 'POST', data: body });
+
+// Cancel from outside the loop (e.g. component unmount, user stops generation)
+stream.cancel('user stopped');
+
+for await (const chunk of stream) {
+  // iteration ends silently
+}
+```
+
+---
+
+## Response metadata
+
+Every result carries full context:
+
+```ts
+const { data, error, status, headers, request, response } = await http.get('/users');
+
+headers.get('x-request-id');  // response headers
+request.url;                  // final URL after interceptors
+request.headers;              // headers that were sent
+response;                     // raw Response object
+```
+
+---
+
+## Download progress
+
+```ts
+const { data } = await http.get('/large-file.zip', {
+  responseType: 'blob',
+  onDownloadProgress: ({ loaded, total, percent }) => {
+    if (percent !== null) setProgress(percent);
+  },
+});
+```
+
+---
+
+## `responseType`
+
+```ts
+await http.get('/doc',       { responseType: 'text' });
+await http.get('/image.png', { responseType: 'blob' });
+await http.get('/binary',    { responseType: 'arrayBuffer' });
+await http.get('/api',       { responseType: 'json' });
+// default: auto-detect from Content-Type
+//   application/json                      → JSON
+//   image/*, video/*, audio/*, pdf, zip   → Blob
+//   everything else                       → text
+```
+
+---
+
+## RESTful Resource
+
+```ts
+import { Resource, Http, setCurrentHttp } from '@mongez/http';
+
+const http = new Http({ baseURL: 'https://api.example.com' });
+setCurrentHttp(http); // register as global default
+
+class UserResource extends Resource {
   route = '/users';
 }
 
-export const usersResource = new UsersResource();
-```
+const users = new UserResource();
 
-```ts
-// List
-const { data: users } = await usersResource.list<User[]>({ page: 1 });
-
-// Get one
-const { data: user } = await usersResource.get<User>(42);
-
-// Create
-const { data: newUser } = await usersResource.create<User>({ name: 'Alice' });
-
-// Update (PUT)
-const { data: updated } = await usersResource.update<User>(42, { name: 'Alice' });
-
-// Partial update (PATCH)
-await usersResource.patch(42, { avatar: 'url' });
-
-// Delete
-await usersResource.delete(42);
-
-// Bulk delete (sends body to DELETE /users)
-await usersResource.bulkDelete({ ids: [1, 2, 3] });
-
-// Publish / Unpublish
-await usersResource.publish(42, true);
-await usersResource.publish(42, false, 'active'); // custom key
-```
-
-`Resource.http` is a **lazy getter** — it calls `getCurrentHttp()` on first use.
-Call `setCurrentHttp(http)` at bootstrap and all Resources will find it automatically.
-
-Override per-resource:
-
-```ts
-const adminHttp = new Http({ baseURL: 'https://admin.api.com' });
-export const adminUsers = new UsersResource().useHttp(adminHttp);
+await users.list({ params: { page: 1 } });  // GET  /users?page=1
+await users.get(42);                         // GET  /users/42
+await users.create({ name: 'Alice' });       // POST /users
+await users.update(42, { name: 'Alice' });   // PUT  /users/42
+await users.patch(42, { verified: true });   // PATCH /users/42
+await users.delete(42);                      // DELETE /users/42
+await users.bulkDelete([1, 2, 3]);           // DELETE /users { ids: [...] }
+await users.publish(42, true);               // PATCH /users/42 { published: true }
 ```
 
 ---
@@ -215,109 +308,31 @@ export const adminUsers = new UsersResource().useHttp(adminHttp);
 ## Caching
 
 ```ts
+import { createLocalStorageDriver } from '@mongez/cache'; // any compatible driver
+
 const http = new Http({
-  cache: {
-    driver: myDriver,   // any CacheDriver-compatible store
-    ttl: 300,           // seconds, default 300
-  },
+  baseURL: 'https://api.example.com',
+  cache: { driver: createLocalStorageDriver(), ttl: 300 },
 });
 
-// Disable for one call
-await http.get('/fresh-data', { cache: false });
+// Bypass cache for this request only
+const { data } = await http.get('/users', { cache: false });
 
-// Explicit key
-await http.get('/users', { cacheKey: 'all-users' });
-```
-
-`CacheDriver` interface:
-
-```ts
-interface CacheDriver {
-  get<T>(key: string): Promise<T | null | undefined>
-  set(key: string, value: unknown, ttl?: number): Promise<void> | void
-  remove?(key: string): Promise<void> | void
-}
+// Custom key
+const { data } = await http.get('/users', { cacheKey: 'user-list' });
 ```
 
 ---
 
-## Retry
+## Multiple instances
 
 ```ts
-const http = new Http({
-  retry: {
-    attempts: 3,
-    delay: 300,         // base ms
-    backoff: true,      // exponential: delay * 2^attempt (default true)
-    retryOn: [429, 503],
-  },
-});
-
-// Per-request override
-await http.get('/flaky', { retry: { attempts: 1, delay: 100 } });
-
-// Disable for one call
-await http.get('/no-retry', { retry: false });
-```
-
-Default `retryOn`: `[429, 500, 502, 503, 504]`. Network errors are always retried. Aborts and timeouts are never retried.
-
----
-
-## Interceptors
-
-```ts
-// Before — modify outgoing request
-http.before((req) => ({
-  ...req,
-  headers: { ...req.headers, 'X-Request-Id': crypto.randomUUID() },
-}));
-
-// After — transform response
-http.after((result) => {
-  if (result.data && 'data' in (result.data as object)) {
-    return { ...result, data: (result.data as { data: unknown }).data };
-  }
-});
-```
-
----
-
-## Multiple instances / extend()
-
-```ts
-const base = new Http({ baseURL: 'https://api.example.com' });
-
-const authHttp = base.extend({
-  headers: { 'X-Api-Key': process.env.API_KEY! },
-});
-```
-
----
-
-## putToPost (Laravel file uploads)
-
-```ts
-const http = new Http({ baseURL, putToPost: true });
-
-// Sent as POST /users/1 with _method=PUT in body
-await http.put('/users/1', formData);
-```
-
----
-
-## Timeout
-
-```ts
-// Global
-const http = new Http({ timeout: 10_000 }); // 10s
-
-// Per-request override
-await http.get('/slow', { timeout: 30_000 });
+const api = new Http({ baseURL: 'https://api.example.com', auth: 'Bearer ...' });
+const cdn = api.extend({ baseURL: 'https://cdn.example.com' }); // inherits auth
 ```
 
 ---
 
 ## License
 
-MIT © [hassanzohdy](https://github.com/hassanzohdy)
+MIT © [Hassan Zohdy](https://github.com/hassanzohdy)

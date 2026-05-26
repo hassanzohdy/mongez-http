@@ -83,17 +83,30 @@ export type HttpEventHandler<T = unknown> = (
 /**
  * Every Http method returns this discriminated union.
  *
- *   const { data, error } = await http.get<User[]>('/users');
+ *   const { data, error, headers, request } = await http.get<User[]>('/users');
  *   if (error) { ... }  // data is null
  *   // data is User[] here
  */
 export type HttpResult<T> =
-  | { data: T; error: null; status: number; response: Response }
+  | {
+      data: T;
+      error: null;
+      status: number;
+      response: Response;
+      /** Response headers. */
+      headers: Headers;
+      /** The outgoing request that produced this result. */
+      request: OutgoingRequest;
+    }
   | {
       data: null;
       error: HttpError;
       status: number | null;
       response: Response | null;
+      /** Response headers, or null when no response was received. */
+      headers: Headers | null;
+      /** The outgoing request that produced this result. */
+      request: OutgoingRequest;
     };
 
 // ─── Configuration ───────────────────────────────────────────────────────────

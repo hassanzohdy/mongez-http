@@ -58,7 +58,7 @@ describe("Http", () => {
       expect(data).toBeNull();
       expect(error).toBeInstanceOf(HttpError);
       expect(error!.status).toBe(404);
-      expect(error!.isNotFound()).toBe(true);
+      expect(error!.isNotFound).toBe(true);
     });
 
     it("appends query params to URL", async () => {

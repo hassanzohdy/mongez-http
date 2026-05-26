@@ -458,6 +458,8 @@ export class Http {
           error: null,
           status: 200,
           response: new Response(),
+          headers: new Headers(),
+          request: req,
         };
         return result;
       }
@@ -487,7 +489,7 @@ export class Http {
 
       // Never retry aborts/timeouts.
       if (httpErr.isAborted || httpErr.isTimeout) {
-        return this.errorResult<T>(httpErr, options);
+        return this.errorResult<T>(httpErr, options, req);
       }
 
       if (
@@ -504,7 +506,7 @@ export class Http {
         return this.executeWithRetry<T>(req, signal, options, cacheConfig, retryConfig, attempt + 1);
       }
 
-      return this.errorResult<T>(httpErr, options);
+      return this.errorResult<T>(httpErr, options, req);
     }
   }
 
@@ -584,6 +586,8 @@ export class Http {
       error: null,
       status: response.status,
       response,
+      headers: response.headers,
+      request: req,
     };
 
     // ── Run after-interceptors ────────────────────────────────────────────────
@@ -600,8 +604,9 @@ export class Http {
   private errorResult<T>(
     err: HttpError,
     options: RequestOptions,
+    req: OutgoingRequest,
   ): HttpResult<T> {
-    this.emit("error", { request: {} as OutgoingRequest, response: undefined });
+    this.emit("error", { request: req, response: undefined });
 
     if (options.throw) throw err;
 
@@ -610,6 +615,8 @@ export class Http {
       error: err,
       status: err.status,
       response: err.response,
+      headers: err.response?.headers ?? null,
+      request: req,
     };
   }
 

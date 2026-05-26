@@ -182,7 +182,7 @@ describe("Http.stream()", () => {
         expect.fail("should have thrown");
       } catch (err) {
         expect((err as HttpError).status).toBe(403);
-        expect((err as HttpError).isForbidden()).toBe(true);
+        expect((err as HttpError).isForbidden).toBe(true);
       }
     });
 

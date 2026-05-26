@@ -1,11 +1,10 @@
 /**
  * Structured error thrown (or returned) by every Http method.
  *
- * Discriminate programmatically:
- *   if (error.isAborted)  { ... }
- *   if (error.isTimeout)  { ... }
- *   if (error.isNetwork)  { ... }
- *   if (error.status === 422) { ... }
+ * All properties and predicates are accessible without calling a function:
+ *   if (error.isAborted)        { return; }
+ *   if (error.isNotFound)       { return null; }
+ *   if (error.isValidationError) { return showErrors(error.body); }
  */
 export class HttpError extends Error {
   /** HTTP status code, or null for network/abort/timeout errors. */
@@ -48,40 +47,40 @@ export class HttpError extends Error {
     Object.setPrototypeOf(this, new.target.prototype);
   }
 
-  // ─── Convenience predicates ──────────────────────────────────────────────────
+  // ─── Status predicates (getters — no () needed) ──────────────────────────────
 
   /** 4xx status code. */
-  isClientError(): boolean {
+  get isClientError(): boolean {
     return this.status !== null && this.status >= 400 && this.status < 500;
   }
 
   /** 5xx status code. */
-  isServerError(): boolean {
+  get isServerError(): boolean {
     return this.status !== null && this.status >= 500 && this.status < 600;
   }
 
   /** 401 Unauthorized. */
-  isUnauthorized(): boolean {
+  get isUnauthorized(): boolean {
     return this.status === 401;
   }
 
   /** 403 Forbidden. */
-  isForbidden(): boolean {
+  get isForbidden(): boolean {
     return this.status === 403;
   }
 
   /** 404 Not Found. */
-  isNotFound(): boolean {
+  get isNotFound(): boolean {
     return this.status === 404;
   }
 
-  /** 422 Unprocessable Entity — typical Laravel/API validation error. */
-  isValidationError(): boolean {
+  /** 422 Unprocessable Entity — typical validation error. */
+  get isValidationError(): boolean {
     return this.status === 422;
   }
 
   /** 429 Too Many Requests. */
-  isRateLimited(): boolean {
+  get isRateLimited(): boolean {
     return this.status === 429;
   }
 

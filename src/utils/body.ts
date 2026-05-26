@@ -61,9 +61,18 @@ export async function parseBody(
         return await response.json();
       default: {
         const ct = response.headers.get("content-type") ?? "";
-        return ct.includes("application/json")
-          ? await response.json()
-          : await response.text();
+        if (ct.includes("application/json")) {
+          return await response.json();
+        }
+        if (
+          /^(image|video|audio|font)\//i.test(ct) ||
+          ct.includes("application/octet-stream") ||
+          ct.includes("application/pdf") ||
+          ct.includes("application/zip")
+        ) {
+          return await response.blob();
+        }
+        return await response.text();
       }
     }
   } catch {
@@ -127,16 +136,24 @@ export async function readBodyWithProgress(
     case "text":
       return new TextDecoder().decode(combined);
     default: {
-      const text = new TextDecoder().decode(combined);
       const ct = response.headers.get("content-type") ?? "";
       if (ct.includes("application/json")) {
+        const text = new TextDecoder().decode(combined);
         try {
           return JSON.parse(text);
         } catch {
           return text;
         }
       }
-      return text;
+      if (
+        /^(image|video|audio|font)\//i.test(ct) ||
+        ct.includes("application/octet-stream") ||
+        ct.includes("application/pdf") ||
+        ct.includes("application/zip")
+      ) {
+        return new Blob([combined], { type: ct || undefined });
+      }
+      return new TextDecoder().decode(combined);
     }
   }
 }
