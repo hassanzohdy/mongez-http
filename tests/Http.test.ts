@@ -507,4 +507,184 @@ describe("Http", () => {
       expect(base.getConfig().headers).toBeUndefined();
     });
   });
+
+  // ── request deduplication ────────────────────────────────────────────────────
+
+  describe("GET deduplication", () => {
+    it("shares one fetch for two concurrent calls to the same URL", async () => {
+      const spy = mockFetch({ users: [] });
+
+      const [r1, r2] = await Promise.all([
+        http.get("/users"),
+        http.get("/users"),
+      ]);
+
+      // Only one actual fetch should have fired.
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(r1.data).toEqual({ users: [] });
+      expect(r2.data).toEqual({ users: [] });
+    });
+
+    it("last caller cancelling aborts the shared fetch", async () => {
+      // A fetch that never resolves on its own — only an abort unblocks it.
+      vi.spyOn(globalThis, "fetch").mockImplementation(
+        () => new Promise<Response>(() => {}),
+      );
+
+      const req1 = http.get("/slow2");
+      const req2 = http.get("/slow2");
+
+      // Both callers cancel synchronously → ref count drops to 0 → sharedController
+      // is aborted. The early-abort check in executeSingle() catches this the moment
+      // the async execute() body runs, so both promises resolve with isAborted=true.
+      req1.cancel();
+      req2.cancel();
+
+      const [res1, res2] = await Promise.all([req1, req2]);
+      expect(res1.error!.isAborted).toBe(true);
+      expect(res2.error!.isAborted).toBe(true);
+    });
+
+    it("partial cancel does not abort the shared fetch", async () => {
+      // Standard mock — resolves immediately on the first microtask.
+      mockFetch({ ok: true });
+
+      const req1 = http.get("/shared");
+      const req2 = http.get("/shared");
+
+      // Only one caller cancels. ref count stays at 1 → shared fetch continues.
+      req1.cancel();
+
+      // req2 still receives the successful response.
+      const { data, error } = await req2;
+      expect(error).toBeNull();
+      expect(data).toEqual({ ok: true });
+    });
+
+    it("sequential calls create separate fetches", async () => {
+      const spy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(
+          new Response(JSON.stringify({}), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+
+      await http.get("/seq");
+      await http.get("/seq");
+
+      // After the first awaited call completes, the entry is removed from the
+      // in-flight map and the second call creates a fresh fetch.
+      expect(spy).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // ── options() ────────────────────────────────────────────────────────────────
+
+  describe("options()", () => {
+    it("sends an OPTIONS request", async () => {
+      const spy = mockFetch({});
+      await http.options("/endpoint");
+      const [, init] = spy.mock.calls[0]!;
+      expect((init as RequestInit).method).toBe("OPTIONS");
+    });
+  });
+
+  // ── request() ────────────────────────────────────────────────────────────────
+
+  describe("request()", () => {
+    it("sends a SEARCH request (non-standard verb)", async () => {
+      const spy = mockFetch([]);
+      await http.request("SEARCH", "/users", undefined);
+      const [, init] = spy.mock.calls[0]!;
+      expect((init as RequestInit).method).toBe("SEARCH");
+    });
+  });
+
+  // ── invalidate / invalidateAll ────────────────────────────────────────────────
+
+  describe("invalidate()", () => {
+    it("calls driver.remove() with the given key", async () => {
+      const removeSpy = vi.fn();
+      const client = new Http({
+        baseURL: "https://api.example.com",
+        cache: { driver: { get: async () => null, set: vi.fn(), remove: removeSpy } },
+      });
+
+      await client.invalidate("my-cache-key");
+      expect(removeSpy).toHaveBeenCalledWith("my-cache-key");
+    });
+
+    it("does nothing when driver has no remove()", async () => {
+      const client = new Http({
+        baseURL: "https://api.example.com",
+        cache: { driver: { get: async () => null, set: vi.fn() } },
+      });
+
+      // Should not throw.
+      await client.invalidate("key");
+    });
+  });
+
+  describe("invalidateAll()", () => {
+    it("calls driver.clear()", async () => {
+      const clearSpy = vi.fn();
+      const client = new Http({
+        baseURL: "https://api.example.com",
+        cache: { driver: { get: async () => null, set: vi.fn(), clear: clearSpy } },
+      });
+
+      await client.invalidateAll();
+      expect(clearSpy).toHaveBeenCalledOnce();
+    });
+  });
+
+  // ── retry with jitter ─────────────────────────────────────────────────────────
+
+  describe("retry with jitter", () => {
+    it("succeeds on second attempt when jitter is enabled", async () => {
+      vi.spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ err: true }), {
+            status: 503,
+            headers: { "Content-Type": "application/json" },
+          }),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ ok: true }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+
+      const client = new Http({
+        baseURL: "https://api.example.com",
+        retry: { attempts: 1, delay: 0, backoff: false, jitter: true },
+      });
+
+      const { data, error } = await client.get("/unstable-jitter");
+      expect(error).toBeNull();
+      expect(data).toEqual({ ok: true });
+    });
+  });
+
+  // ── after interceptor on error branch ─────────────────────────────────────────
+
+  describe("after interceptor on error", () => {
+    it("runs after interceptors when the request fails", async () => {
+      mockFetch({ code: "NOT_FOUND" }, 404);
+
+      const seen: unknown[] = [];
+      http.after((result) => {
+        seen.push(result.error);
+      });
+
+      const { error } = await http.get("/missing-after");
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toBe(error);
+    });
+  });
+
+  // ── extend() ─────────────────────────────────────────────────────────────────
 });

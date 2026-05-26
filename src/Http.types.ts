@@ -2,7 +2,7 @@ import type { HttpError } from "./HttpError";
 
 // ─── Primitives ──────────────────────────────────────────────────────────────
 
-export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD";
+export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
 
 export type HttpData =
   | string
@@ -25,6 +25,8 @@ export interface CacheDriver {
   get<T = unknown>(key: string): Promise<T | null | undefined>;
   set(key: string, value: unknown, ttl?: number): Promise<void> | void;
   remove?(key: string): Promise<void> | void;
+  /** Clear all entries. Required for `http.invalidateAll()`. */
+  clear?(): Promise<void> | void;
 }
 
 export interface HttpCacheConfig {
@@ -44,6 +46,12 @@ export interface HttpRetryConfig {
   delay: number;
   /** Double delay after each attempt. Default: true. */
   backoff?: boolean;
+  /**
+   * Add randomised jitter to retry delays to avoid thundering-herd problems.
+   * When true, each delay is multiplied by a random factor in [0.5, 1.0].
+   * Default: false.
+   */
+  jitter?: boolean;
   /** Status codes that trigger a retry. Default: [429, 500, 502, 503, 504]. */
   retryOn?: number[];
 }
@@ -51,7 +59,8 @@ export interface HttpRetryConfig {
 // ─── Interceptors ────────────────────────────────────────────────────────────
 
 export interface OutgoingRequest {
-  method: HttpMethod;
+  /** HTTP method. Supports all standard methods plus arbitrary strings for escape-hatch use. */
+  method: HttpMethod | string;
   url: string;
   headers: Record<string, string>;
   body?: BodyInit;

@@ -21,7 +21,7 @@ import { type CancellableAsyncIterable, type CancellablePromise, makeCancellable
 import { appendParams } from "./utils/params";
 import { parseBody, prepareBody, readBodyWithProgress } from "./utils/body";
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Module-level helpers ─────────────────────────────────────────────────────
 
 /**
  * Join a base URL (may include protocol + host) with a path segment.
@@ -32,17 +32,17 @@ function joinUrl(base: string, path: string): string {
   return base.replace(/\/$/, "") + "/" + path.replace(/^\//, "");
 }
 
+function headersToObject(headers: Headers): Record<string, string> {
+  const result: Record<string, string> = {};
+  headers.forEach((value, key) => { result[key] = value; });
+  return result;
+}
+
 const DEFAULT_RETRY_ON = [429, 500, 502, 503, 504];
 const DEFAULT_TTL = 300; // 5 minutes
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function headersToObject(headers: Headers): Record<string, string> {
-  const result: Record<string, string> = {};
-  headers.forEach((value, key) => { result[key] = value; });
-  return result;
 }
 
 function buildCacheKey(url: string, params?: HttpParams): string {
@@ -89,6 +89,16 @@ export class Http {
   private readonly beforeInterceptors: BeforeInterceptor[] = [];
   private readonly afterInterceptors: AfterInterceptor[] = [];
   private readonly eventHandlers: Map<string, HttpEventHandler[]> = new Map();
+  /**
+   * In-flight GET entries keyed by URL+params. Each entry tracks the shared underlying
+   * promise, the shared AbortController, and a ref-count of active callers.
+   * When the last caller cancels, the shared fetch is aborted.
+   */
+  private readonly inFlight = new Map<string, {
+    promise: Promise<HttpResult<unknown>>;
+    sharedController: AbortController;
+    refs: number;
+  }>();
 
   constructor(config: HttpConfig = {}) {
     this.config = config;
@@ -144,45 +154,131 @@ export class Http {
 
   // ─── Public HTTP methods ─────────────────────────────────────────────────────
 
-  get<T = unknown>(
-    path: string,
-    options?: RequestOptions,
-  ): CancellablePromise<HttpResult<T>> {
+  get<T = unknown>(path: string, options?: RequestOptions): CancellablePromise<HttpResult<T>> {
     return this.request<T>("GET", path, undefined, options);
   }
 
-  post<T = unknown>(
-    path: string,
-    data?: HttpData,
-    options?: RequestOptions,
-  ): CancellablePromise<HttpResult<T>> {
+  post<T = unknown>(path: string, data?: HttpData, options?: RequestOptions): CancellablePromise<HttpResult<T>> {
     return this.request<T>("POST", path, data, options);
   }
 
-  put<T = unknown>(
-    path: string,
-    data?: HttpData,
-    options?: RequestOptions,
-  ): CancellablePromise<HttpResult<T>> {
+  put<T = unknown>(path: string, data?: HttpData, options?: RequestOptions): CancellablePromise<HttpResult<T>> {
     return this.request<T>("PUT", path, data, options);
   }
 
-  patch<T = unknown>(
-    path: string,
-    options?: RequestOptions,
-  ): CancellablePromise<HttpResult<T>> {
+  patch<T = unknown>(path: string, options?: RequestOptions): CancellablePromise<HttpResult<T>> {
     return this.request<T>("PATCH", path, options?.data as HttpData | undefined, options);
   }
 
-  delete<T = unknown>(
-    path: string,
-    options?: RequestOptions,
-  ): CancellablePromise<HttpResult<T>> {
+  delete<T = unknown>(path: string, options?: RequestOptions): CancellablePromise<HttpResult<T>> {
     return this.request<T>("DELETE", path, options?.data as HttpData | undefined, options);
   }
 
   head(path: string, options?: RequestOptions): CancellablePromise<HttpResult<null>> {
     return this.request<null>("HEAD", path, undefined, options);
+  }
+
+  options<T = unknown>(path: string, options?: RequestOptions): CancellablePromise<HttpResult<T>> {
+    return this.request<T>("OPTIONS", path, undefined, options);
+  }
+
+  /**
+   * Send a request with any HTTP method — the escape hatch for non-standard verbs.
+   * All convenience methods delegate here.
+   *
+   * GET requests are automatically deduplicated: concurrent calls with the same URL
+   * share a single underlying fetch. Each caller gets its own CancellablePromise.
+   *
+   * Note: cancelling a deduplicated GET does not abort the shared fetch — other
+   * callers waiting for the same URL are unaffected.
+   */
+  request<T = unknown>(
+    method: HttpMethod | string,
+    path: string,
+    data?: HttpData,
+    options: RequestOptions = {},
+  ): CancellablePromise<HttpResult<T>> {
+    if (method === "GET") {
+      const dedupeKey = appendParams(
+        joinUrl(this.config.baseURL ?? "", path),
+        options.params,
+      );
+
+      if (!this.inFlight.has(dedupeKey)) {
+        const sharedController = new AbortController();
+        const promise = this.execute<T>(method, path, data, options, sharedController.signal) as Promise<HttpResult<unknown>>;
+        this.inFlight.set(dedupeKey, { promise, sharedController, refs: 0 });
+        // Use then(cb, cb) rather than finally(cb): the .finally() variant creates a
+        // derived promise that re-throws any rejection, causing an unhandled-rejection
+        // warning when no external consumer has attached a rejection handler to it yet.
+        const cleanup = (): void => { this.inFlight.delete(dedupeKey); };
+        promise.then(cleanup, cleanup);
+      }
+
+      const entry = this.inFlight.get(dedupeKey)!;
+      entry.refs++;
+
+      // Each caller gets its own AbortController so cancel() is per-caller.
+      // When the last active caller cancels, the shared fetch is aborted too.
+      const callerController = new AbortController();
+
+      callerController.signal.addEventListener("abort", (): void => {
+        entry.refs--;
+        if (entry.refs <= 0) {
+          entry.sharedController.abort(callerController.signal.reason);
+        }
+      }, { once: true });
+
+      // Forward an external signal (React Query / useEffect) to the caller controller.
+      if (options.signal) {
+        if (options.signal.aborted) {
+          callerController.abort(options.signal.reason);
+        } else {
+          const extSignal = options.signal;
+          extSignal.addEventListener(
+            "abort",
+            (): void => callerController.abort(extSignal.reason),
+            { once: true },
+          );
+        }
+      }
+
+      // .then() produces a fresh promise object — safe to attach per-caller properties.
+      const callerPromise = entry.promise.then((r) => r as HttpResult<T>);
+      return Object.assign(callerPromise, {
+        cancel: (reason?: string): void => callerController.abort(reason ?? "cancelled"),
+        signal: callerController.signal,
+      }) as unknown as CancellablePromise<HttpResult<T>>;
+    }
+
+    return makeCancellable(
+      (signal) => this.execute<T>(method as HttpMethod, path, data, options, signal),
+      options.signal,
+    );
+  }
+
+  // ─── Cache management ────────────────────────────────────────────────────────
+
+  /**
+   * Remove a single cache entry by key.
+   * Pass the same key used in `options.cacheKey`, or the auto-generated key:
+   * `http:<url>:<serialised-params>`.
+   */
+  async invalidate(key: string): Promise<void> {
+    const config = this.resolveCacheConfig({});
+    if (config?.driver.remove) {
+      await config.driver.remove(key);
+    }
+  }
+
+  /**
+   * Remove all cache entries. Requires the driver to implement `clear()`.
+   */
+  async invalidateAll(): Promise<void> {
+    const config = this.resolveCacheConfig({});
+    if (config?.driver.clear) {
+      await config.driver.clear();
+    }
   }
 
   // ─── Streaming ──────────────────────────────────────────────────────────────
@@ -194,18 +290,11 @@ export class Http {
    * Use `.cancel()` to abort the stream from outside the loop.
    *
    * @example
-   * // OpenAI-style SSE
    * for await (const chunk of http.stream<ChatChunk>('/chat', {
    *   method: 'POST',
    *   data: { messages },
    * })) {
    *   process(chunk);
-   * }
-   *
-   * @example
-   * // NDJSON (e.g. Docker logs)
-   * for await (const line of http.stream('/containers/logs', { format: 'ndjson' })) {
-   *   console.log(line);
    * }
    */
   stream<T = unknown>(
@@ -214,7 +303,6 @@ export class Http {
   ): CancellableAsyncIterable<T> {
     const controller = new AbortController();
 
-    // Forward any external signal into our controller.
     if (options.signal) {
       const ext = options.signal;
       if (ext.aborted) {
@@ -228,51 +316,23 @@ export class Http {
     const self = this;
 
     async function* generator(): AsyncGenerator<T> {
-      const baseURL = self.config.baseURL ?? "";
-      const fullPath = appendParams(joinUrl(baseURL, path), options.params);
-
-      const { body, contentType } = prepareBody(options.data);
-
-      const headers: Record<string, string> = {
-        ...(self.config.headers ?? {}),
-        ...(options.headers ?? {}),
-      };
-
-      if (contentType && !headers["Content-Type"]) {
-        headers["Content-Type"] = contentType;
+      // ── Build request (shared logic with regular requests) ───────────────────
+      const extraHeaders: Record<string, string> = {};
+      if (!options.headers?.["Accept"]) {
+        extraHeaders["Accept"] = "text/event-stream, application/x-ndjson, */*";
       }
 
-      // Signal to the server that we want a streaming response.
-      if (!headers["Accept"]) {
-        headers["Accept"] = "text/event-stream, application/x-ndjson, */*";
-      }
-
-      const outgoing: OutgoingRequest = {
-        method: options.method ?? "GET",
-        url: fullPath,
-        headers,
-        body,
-      };
-
-      const authValue =
-        typeof self.config.auth === "function"
-          ? self.config.auth(outgoing)
-          : self.config.auth;
-
-      if (authValue) {
-        headers["Authorization"] = authValue;
-      }
-
-      // Run before-interceptors.
-      let req = outgoing;
-      for (const interceptor of self.beforeInterceptors) {
-        const modified = await interceptor(req);
-        if (modified) req = modified;
-      }
+      const req = await self.buildOutgoingRequest(
+        options.method ?? "GET",
+        path,
+        options.data as HttpData | undefined,
+        options,
+        extraHeaders,
+      );
 
       self.emit("request", { request: req });
 
-      // ── Fetch ───────────────────────────────────────────────────────────────
+      // ── Fetch ────────────────────────────────────────────────────────────────
       let response: Response;
       try {
         response = await fetch(req.url, {
@@ -283,20 +343,21 @@ export class Http {
         });
       } catch {
         if (controller.signal.aborted) return; // cancelled — end silently
-        throw new HttpError({
-          message: "Stream network error",
-          isNetwork: true,
-        });
+        const err = new HttpError({ message: "Stream network error", isNetwork: true });
+        self.emit("error", { request: req, response: undefined });
+        throw err;
       }
 
       if (!response.ok) {
         const errorBody = await parseBody(response).catch(() => null);
-        throw new HttpError({
+        const err = new HttpError({
           message: `HTTP ${response.status} ${response.statusText}`,
           status: response.status,
           body: errorBody,
           response,
         });
+        self.emit("error", { request: req, response: undefined });
+        throw err;
       }
 
       // ── Read line-by-line ────────────────────────────────────────────────────
@@ -312,9 +373,10 @@ export class Http {
           try {
             readResult = await reader.read();
           } catch {
-            // Aborted while reading — end silently.
-            if (controller.signal.aborted) return;
-            throw new HttpError({ message: "Stream read error", isNetwork: true });
+            if (controller.signal.aborted) return; // cancelled — end silently
+            const err = new HttpError({ message: "Stream read error", isNetwork: true });
+            self.emit("error", { request: req, response: undefined });
+            throw err;
           }
 
           const { done, value } = readResult;
@@ -353,30 +415,55 @@ export class Http {
     const gen = generator();
 
     return {
-      [Symbol.asyncIterator](): AsyncIterator<T> {
-        return gen;
-      },
-      cancel(reason?: string): void {
-        controller.abort(reason ?? "cancelled");
-      },
-      get signal(): AbortSignal {
-        return controller.signal;
-      },
+      [Symbol.asyncIterator](): AsyncIterator<T> { return gen; },
+      cancel(reason?: string): void { controller.abort(reason ?? "cancelled"); },
+      get signal(): AbortSignal { return controller.signal; },
     };
   }
 
-  // ─── Core request ───────────────────────────────────────────────────────────
+  // ─── Core execution ──────────────────────────────────────────────────────────
 
-  private request<T>(
-    method: HttpMethod,
+  /**
+   * Build the final OutgoingRequest: URL, headers, auth, before-interceptors.
+   * Shared by both regular requests and streaming.
+   */
+  private async buildOutgoingRequest(
+    method: HttpMethod | string,
     path: string,
-    data?: HttpData,
-    options: RequestOptions = {},
-  ): CancellablePromise<HttpResult<T>> {
-    return makeCancellable(
-      (signal) => this.execute<T>(method, path, data, options, signal),
-      options.signal,
-    );
+    data: HttpData | undefined,
+    options: Pick<RequestOptions, "params" | "headers">,
+    extraHeaders: Record<string, string> = {},
+  ): Promise<OutgoingRequest> {
+    const baseURL = this.config.baseURL ?? "";
+    const fullPath = appendParams(joinUrl(baseURL, path), options.params);
+
+    const { body, contentType } = prepareBody(data);
+
+    const headers: Record<string, string> = {
+      ...(this.config.headers ?? {}),
+      ...extraHeaders,
+      ...(options.headers ?? {}),
+    };
+
+    if (contentType && !headers["Content-Type"]) {
+      headers["Content-Type"] = contentType;
+    }
+
+    const outgoing: OutgoingRequest = { method, url: fullPath, headers, body };
+
+    const authValue = typeof this.config.auth === "function"
+      ? this.config.auth(outgoing)
+      : this.config.auth;
+
+    if (authValue) headers["Authorization"] = authValue;
+
+    let req = outgoing;
+    for (const interceptor of this.beforeInterceptors) {
+      const modified = await interceptor(req);
+      if (modified) req = modified;
+    }
+
+    return req;
   }
 
   private async execute<T>(
@@ -387,7 +474,7 @@ export class Http {
     signal: AbortSignal,
   ): Promise<HttpResult<T>> {
     // ── putToPost conversion ──────────────────────────────────────────────────
-    let actualMethod = method;
+    let actualMethod: HttpMethod | string = method;
     let actualData = data;
 
     if (method === "PUT" && this.config.putToPost) {
@@ -402,80 +489,32 @@ export class Http {
       }
     }
 
-    // ── Build URL ─────────────────────────────────────────────────────────────
-    const baseURL = this.config.baseURL ?? "";
-    const fullPath = appendParams(
-      joinUrl(baseURL, path),
-      options.params,
-    );
+    // ── Build outgoing request ────────────────────────────────────────────────
+    const req = await this.buildOutgoingRequest(actualMethod, path, actualData, options);
 
-    // ── Build headers ─────────────────────────────────────────────────────────
-    const { body, contentType } = prepareBody(actualData);
-
-    const headers: Record<string, string> = {
-      ...(this.config.headers ?? {}),
-      ...(options.headers ?? {}),
-    };
-
-    if (contentType && !headers["Content-Type"]) {
-      headers["Content-Type"] = contentType;
-    }
-
-    // ── Auth ──────────────────────────────────────────────────────────────────
-    const outgoing: OutgoingRequest = {
-      method: actualMethod,
-      url: fullPath,
-      headers,
-      body,
-    };
-
-    const authValue =
-      typeof this.config.auth === "function"
-        ? this.config.auth(outgoing)
-        : this.config.auth;
-
-    if (authValue) {
-      headers["Authorization"] = authValue;
-    }
-
-    // ── Run before-interceptors ───────────────────────────────────────────────
-    let req = outgoing;
-    for (const interceptor of this.beforeInterceptors) {
-      const modified = await interceptor(req);
-      if (modified) req = modified;
-    }
-
-    this.emit("request", { request: req });
-
-    // ── Cache check (GET only) ────────────────────────────────────────────────
+    // ── Cache check (GET only) — runs before emitting "request" so the event
+    //    only fires for actual network calls, not cache hits. ─────────────────
     const cacheConfig = this.resolveCacheConfig(options);
+    let cacheKey: string | undefined;
+
     if (actualMethod === "GET" && cacheConfig) {
-      const cacheKey =
-        options.cacheKey ??
+      cacheKey = options.cacheKey ??
         (cacheConfig.generateKey
           ? cacheConfig.generateKey(req.url, options.params)
           : buildCacheKey(req.url, options.params));
 
       const cached = await cacheConfig.driver.get<T>(cacheKey);
       if (cached !== null && cached !== undefined) {
-        const result: HttpResult<T> = {
-          data: cached,
-          error: null,
-          status: 200,
-          response: new Response(),
-          headers: {},
-          request: req,
-        };
-        return result;
+        return { data: cached, error: null, status: 200, response: new Response(), headers: {}, request: req };
       }
-
-      // Stash key for post-fetch storage.
-      (options as RequestOptions & { _cacheKey?: string })._cacheKey = cacheKey;
     }
+
+    // ── Emit "request" (only for real network calls, never for cache hits) ────
+    this.emit("request", { request: req });
 
     // ── Retry wrapper ─────────────────────────────────────────────────────────
     const retryConfig = this.resolveRetryConfig(options);
-    return this.executeWithRetry<T>(req, signal, options, cacheConfig, retryConfig);
+    return this.executeWithRetry<T>(req, signal, options, cacheConfig, retryConfig, cacheKey);
   }
 
   private async executeWithRetry<T>(
@@ -484,34 +523,40 @@ export class Http {
     options: RequestOptions,
     cacheConfig: ResolvedCache | null,
     retryConfig: HttpRetryConfig | null,
+    cacheKey: string | undefined,
     attempt = 0,
   ): Promise<HttpResult<T>> {
     try {
-      const result = await this.executeSingle<T>(req, signal, options, cacheConfig);
-      return result;
+      return await this.executeSingle<T>(req, signal, options, cacheConfig, cacheKey);
     } catch (err) {
-      const httpErr = err as HttpError;
+      // Guard: only handle HttpErrors — rethrow anything else (e.g. interceptor bugs).
+      if (!(err instanceof HttpError)) throw err;
 
-      // Never retry aborts/timeouts.
-      if (httpErr.isAborted || httpErr.isTimeout) {
-        return this.errorResult<T>(httpErr, options, req);
+      // Never retry aborts or timeouts.
+      if (err.isAborted || err.isTimeout) {
+        return this.errorResult<T>(err, options, req);
       }
 
       if (
         retryConfig &&
         attempt < retryConfig.attempts &&
-        this.shouldRetry(httpErr, retryConfig)
+        this.shouldRetry(err, retryConfig)
       ) {
-        const delay =
-          retryConfig.backoff !== false
-            ? retryConfig.delay * Math.pow(2, attempt)
-            : retryConfig.delay;
+        const base = retryConfig.backoff !== false
+          ? retryConfig.delay * Math.pow(2, attempt)
+          : retryConfig.delay;
+
+        // Optional jitter: multiply by a random factor in [0.5, 1.0] to avoid
+        // thundering-herd problems when many clients retry simultaneously.
+        const delay = retryConfig.jitter === true
+          ? base * (0.5 + Math.random() * 0.5)
+          : base;
 
         await sleep(delay);
-        return this.executeWithRetry<T>(req, signal, options, cacheConfig, retryConfig, attempt + 1);
+        return this.executeWithRetry<T>(req, signal, options, cacheConfig, retryConfig, cacheKey, attempt + 1);
       }
 
-      return this.errorResult<T>(httpErr, options, req);
+      return this.errorResult<T>(err, options, req);
     }
   }
 
@@ -520,7 +565,17 @@ export class Http {
     signal: AbortSignal,
     options: RequestOptions,
     cacheConfig: ResolvedCache | null,
+    cacheKey: string | undefined,
   ): Promise<HttpResult<T>> {
+    // Fast path: if the signal was already aborted before the microtask queue
+    // delivered execute() — e.g. cancel() was called synchronously right after
+    // creating the request — throw immediately without touching fetch.
+    // AbortSignal does NOT fire "abort" listeners retroactively, so waiting for
+    // the event inside the fetch mock (or real fetch) would hang forever.
+    if (signal.aborted) {
+      throw new HttpError({ message: "Request was cancelled", isAborted: true });
+    }
+
     // ── Timeout ───────────────────────────────────────────────────────────────
     const timeout = options.timeout ?? this.config.timeout;
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -580,10 +635,8 @@ export class Http {
     }
 
     // ── Store in cache ────────────────────────────────────────────────────────
-    const cacheKey = (options as RequestOptions & { _cacheKey?: string })._cacheKey;
     if (cacheConfig && cacheKey) {
-      const ttl = cacheConfig.ttl ?? DEFAULT_TTL;
-      await cacheConfig.driver.set(cacheKey, parsedBody as T, ttl);
+      await cacheConfig.driver.set(cacheKey, parsedBody as T, cacheConfig.ttl ?? DEFAULT_TTL);
     }
 
     const result: HttpResult<T> = {
@@ -595,7 +648,7 @@ export class Http {
       request: req,
     };
 
-    // ── Run after-interceptors ────────────────────────────────────────────────
+    // ── After-interceptors (success branch) ───────────────────────────────────
     let finalResult = result as HttpResult<unknown>;
     for (const interceptor of this.afterInterceptors) {
       const modified = await interceptor(finalResult);
@@ -606,16 +659,12 @@ export class Http {
     return finalResult as HttpResult<T>;
   }
 
-  private errorResult<T>(
+  private async errorResult<T>(
     err: HttpError,
     options: RequestOptions,
     req: OutgoingRequest,
-  ): HttpResult<T> {
-    this.emit("error", { request: req, response: undefined });
-
-    if (options.throw) throw err;
-
-    return {
+  ): Promise<HttpResult<T>> {
+    let result: HttpResult<T> = {
       data: null,
       error: err,
       status: err.status,
@@ -623,9 +672,24 @@ export class Http {
       headers: err.response ? headersToObject(err.response.headers) : null,
       request: req,
     };
+
+    // ── After-interceptors (error branch) — allows global error transformation ─
+    let finalResult = result as HttpResult<unknown>;
+    for (const interceptor of this.afterInterceptors) {
+      const modified = await interceptor(finalResult);
+      if (modified) finalResult = modified;
+    }
+
+    result = finalResult as HttpResult<T>;
+
+    this.emit("error", { request: req, response: finalResult });
+
+    if (options.throw) throw err;
+
+    return result;
   }
 
-  // ─── Retry helpers ───────────────────────────────────────────────────────────
+  // ─── Helpers ─────────────────────────────────────────────────────────────────
 
   private shouldRetry(err: HttpError, config: HttpRetryConfig): boolean {
     if (err.isNetwork) return true;
@@ -633,8 +697,6 @@ export class Http {
     const retryOn = config.retryOn ?? DEFAULT_RETRY_ON;
     return retryOn.includes(err.status);
   }
-
-  // ─── Cache resolution ────────────────────────────────────────────────────────
 
   private resolveCacheConfig(options: RequestOptions): ResolvedCache | null {
     const opt = options.cache;
@@ -674,18 +736,22 @@ export class Http {
 type ResolvedCache = HttpCacheConfig & { driver: CacheDriver };
 
 // ─── Utility: merge two AbortSignals ─────────────────────────────────────────
+// Each handler removes the other listener when it fires, preventing leaks when
+// only one signal ever aborts (e.g. timeout fires but cancel never does).
 
 function mergeSignals(a: AbortSignal, b: AbortSignal): AbortSignal {
   const controller = new AbortController();
-  const abort = () => controller.abort();
 
   if (a.aborted || b.aborted) {
     controller.abort();
     return controller.signal;
   }
 
-  a.addEventListener("abort", abort, { once: true });
-  b.addEventListener("abort", abort, { once: true });
+  const abortFromA = (): void => { controller.abort(); b.removeEventListener("abort", abortFromB); };
+  const abortFromB = (): void => { controller.abort(); a.removeEventListener("abort", abortFromA); };
+
+  a.addEventListener("abort", abortFromA, { once: true });
+  b.addEventListener("abort", abortFromB, { once: true });
 
   return controller.signal;
 }
