@@ -164,6 +164,24 @@ export interface HttpConfig {
    */
   credentials?: RequestCredentials;
 
+  /**
+   * CORS mode for all requests.
+   *
+   * - `"cors"` *(default)* — cross-origin requests are allowed; server must send CORS headers.
+   * - `"no-cors"` — cross-origin request with limited response access (opaque response).
+   * - `"same-origin"` — only same-origin requests; cross-origin throws.
+   * - `"navigate"` — used by browser navigation; rarely needed in API clients.
+   */
+  mode?: RequestMode;
+
+  /**
+   * Keep the underlying TCP connection alive after the page unloads.
+   * Useful for fire-and-forget analytics / telemetry beacons sent on `unload`/`pagehide`.
+   * Maximum body size is 64 KB when `keepalive` is true.
+   * @default false
+   */
+  keepalive?: boolean;
+
   /** Enable/configure response caching for GET requests. */
   cache?: boolean | HttpCacheConfig;
 
@@ -259,6 +277,18 @@ export interface RequestOptions {
    * See `HttpConfig.credentials` for full documentation.
    */
   credentials?: RequestCredentials;
+
+  /**
+   * Override the global `mode` setting for this single request.
+   * See `HttpConfig.mode` for full documentation.
+   */
+  mode?: RequestMode;
+
+  /**
+   * Override the global `keepalive` setting for this single request.
+   * See `HttpConfig.keepalive` for full documentation.
+   */
+  keepalive?: boolean;
 
   /** Request body — used for DELETE-with-body (bulkDelete) and similar. */
   data?: unknown;

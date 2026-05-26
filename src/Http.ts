@@ -403,6 +403,7 @@ export class Http {
           body: req.body,
           signal: controller.signal,
           credentials: options.credentials ?? self.config.credentials,
+          mode: options.mode ?? self.config.mode,
         });
       } catch {
         if (controller.signal.aborted) return; // cancelled — end silently
@@ -678,6 +679,8 @@ export class Http {
         body: req.body,
         signal: effectiveSignal,
         credentials: options.credentials ?? this.config.credentials,
+        mode: options.mode ?? this.config.mode,
+        keepalive: options.keepalive ?? this.config.keepalive,
       });
     } catch (err) {
       clearTimeout(timeoutId);

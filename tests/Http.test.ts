@@ -686,5 +686,45 @@ describe("Http", () => {
     });
   });
 
+  // ── mode ─────────────────────────────────────────────────────────────────────
+
+  describe("mode option", () => {
+    it("forwards global mode to fetch", async () => {
+      const client = new Http({ baseURL: "https://api.example.com", mode: "no-cors" });
+      const spy = mockFetch({});
+      await client.get("/test");
+      const [, init] = spy.mock.calls[0]!;
+      expect((init as RequestInit).mode).toBe("no-cors");
+    });
+
+    it("per-request mode overrides global mode", async () => {
+      const client = new Http({ baseURL: "https://api.example.com", mode: "cors" });
+      const spy = mockFetch({});
+      await client.get("/test", { mode: "same-origin" });
+      const [, init] = spy.mock.calls[0]!;
+      expect((init as RequestInit).mode).toBe("same-origin");
+    });
+  });
+
+  // ── keepalive ─────────────────────────────────────────────────────────────────
+
+  describe("keepalive option", () => {
+    it("forwards global keepalive to fetch", async () => {
+      const client = new Http({ baseURL: "https://api.example.com", keepalive: true });
+      const spy = mockFetch({});
+      await client.post("/beacon", { event: "unload" });
+      const [, init] = spy.mock.calls[0]!;
+      expect((init as RequestInit).keepalive).toBe(true);
+    });
+
+    it("per-request keepalive overrides global keepalive", async () => {
+      const client = new Http({ baseURL: "https://api.example.com", keepalive: false });
+      const spy = mockFetch({});
+      await client.post("/beacon", { event: "unload" }, { keepalive: true });
+      const [, init] = spy.mock.calls[0]!;
+      expect((init as RequestInit).keepalive).toBe(true);
+    });
+  });
+
   // ── extend() ─────────────────────────────────────────────────────────────────
 });
