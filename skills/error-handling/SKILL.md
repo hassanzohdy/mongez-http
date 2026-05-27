@@ -1,9 +1,9 @@
 ---
 name: mongez-http-error-handling
 description: |
-  @mongez/http `HttpError` and `HttpResult<T>` — status predicates (`isNotFound`, `isUnauthorized`, `isForbidden`, `isValidationError`, `isRateLimited`, `isClientError`, `isServerError`), runtime flags (`isAborted`, `isTimeout`, `isNetwork`), `toJSON`. `HttpResult<T>` discriminated union; opt-in `throw: true` mode; TypeScript type narrowing.
-  TRIGGER when: `HttpError`, `HttpResult`, `error.isAborted`, `error.isTimeout`, `error.isNotFound`, `error.isUnauthorized`, `error.isForbidden`, `error.isValidationError`, `error.isRateLimited`, `error.body`, `{ throw: true }`; user asks "handle HTTP errors" or "check if 404" or "detect abort" or "handle 422 validation" or "catch network error".
-  SKIP: interceptors to transform/replay errors — use `mongez-http-interceptors`; retry logic — use `mongez-http-interceptors`; stream errors — use `mongez-http-streaming`.
+  @mongez/http `HttpError` and `HttpResult<T>` — status predicates (`isNotFound`, `isUnauthorized`, `isForbidden`, `isValidationError`, `isRateLimited`, `isClientError`, `isServerError`), runtime flags (`isAborted`, `isTimeout`, `isNetwork`), `toJSON`. `{data, error}` discriminated union; opt-in `throw: true` mode; TypeScript type narrowing.
+  TRIGGER when: `HttpError`, `HttpResult`, `error.isAborted`, `error.isTimeout`, `error.isNotFound`, `error.isUnauthorized`, `error.isForbidden`, `error.isValidationError`, `error.isRateLimited`, `error.isNetwork`, `error.body`, `{ throw: true }`; user asks "handle HTTP errors" or "check if 404" or "detect aborted request" or "handle 422 validation errors" or "form validation errors from API" or "catch network error".
+  SKIP: interceptors that transform/replay errors — use `mongez-http-interceptors`; retry on error — use `mongez-http-interceptors`; stream errors (set on `stream.error`) — use `mongez-http-streaming`; user is using `axios` (`error.response`), raw `fetch` + `try/catch`, or `try/catch` patterns without `@mongez/http`.
 ---
 
 # Error handling
@@ -49,7 +49,7 @@ type HttpResult<T> =
 const { data, error } = await http.get<User>('/users/1');
 
 if (error) {
-  if (error.isNotFound)        console.warn('User not found');
+  if (error.isNotFound)             console.warn('User not found');
   else if (error.isUnauthorized)    redirect('/login');
   else if (error.isValidationError) showFormErrors(error.body);
   else if (error.isAborted)         { /* request was cancelled — ignore */ }
@@ -59,6 +59,21 @@ if (error) {
 
 // data is User here — TypeScript knows error is null
 console.log(data.name);
+```
+
+## Validation errors (422) — Laravel-style
+
+```ts
+const { data, error } = await usersResource.create(formData);
+
+if (error?.isValidationError) {
+  // error.body is whatever the server returned, e.g.:
+  // { errors: { name: ['The name field is required.'], ... } }
+  const { errors } = error.body as { errors: Record<string, string[]> };
+  for (const [field, messages] of Object.entries(errors)) {
+    setFieldError(field, messages[0]);
+  }
+}
 ```
 
 ## Opt-in throw mode

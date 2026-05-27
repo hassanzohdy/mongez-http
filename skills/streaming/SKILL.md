@@ -1,9 +1,9 @@
 ---
 name: mongez-http-streaming
 description: |
-  @mongez/http streaming — `stream()` for SSE/NDJSON async iteration (`CancellableAsyncIterable`); `responseType: "stream"` for raw `ReadableStream`; `onDownloadProgress` (`DownloadProgressEvent`) for progress bars; `StreamRequestOptions` (format, parseLine, reconnect, reconnectDelay, maxReconnectAttempts).
-  TRIGGER when: `http.stream`, `CancellableAsyncIterable`, `StreamRequestOptions`, `responseType: "stream"`, `onDownloadProgress`, `DownloadProgressEvent`, `format: "sse"`, `format: "ndjson"`, `parseLine`, `reconnect`; user asks "stream SSE" or "OpenAI chat stream" or "NDJSON" or "download progress" or "raw ReadableStream" or "pipe to file" or "async iterable".
-  SKIP: application-level cache of streamed responses — not supported; upload progress — native `fetch` has none (use `XMLHttpRequest`); regular JSON responses — use `mongez-http-client`.
+  @mongez/http streaming — `stream()` for SSE/NDJSON async iteration (`CancellableAsyncIterable`); `responseType: "stream"` for raw `ReadableStream`; `onDownloadProgress` (`DownloadProgressEvent`) for download progress; `StreamRequestOptions` (format, parseLine, reconnect, reconnectDelay, maxReconnectAttempts).
+  TRIGGER when: `http.stream`, `CancellableAsyncIterable`, `StreamRequestOptions`, `responseType: "stream"`, `onDownloadProgress`, `DownloadProgressEvent`, `format: "sse"`, `format: "ndjson"`, `parseLine`, `reconnect`; user asks "stream SSE" or "OpenAI chat completion stream" or "NDJSON stream" or "download progress bar" or "raw ReadableStream" or "pipe response to file" or "async iterable HTTP" or "Server-Sent Events".
+  SKIP: application-level cache of streams — not supported; upload progress (native `fetch` has none) — use `XMLHttpRequest`; non-streaming JSON — use `mongez-http-client`; user is using native `EventSource`, `eventsource-parser`, raw `ReadableStream` + `getReader()`, `fetch` `response.body`, or `axios` `responseType: "stream"` without `@mongez/http`.
 ---
 
 # Streaming, progress & responseType

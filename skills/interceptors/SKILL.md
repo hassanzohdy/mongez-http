@@ -2,8 +2,8 @@
 name: mongez-http-interceptors
 description: |
   @mongez/http interceptors & lifecycle — `before()` (`BeforeInterceptor`, `OutgoingRequest` + read-only `RequestOptions`), `after()` (`AfterInterceptor`, `AfterInterceptorContext.replay()`), lifecycle events (`on`/`off`: `"request"`, `"response"`, `"error"`), and `HttpRetryConfig` (attempts, delay, backoff, jitter, retryOn, onRetry).
-  TRIGGER when: `http.before`, `http.after`, `BeforeInterceptor`, `AfterInterceptor`, `AfterInterceptorContext`, `replay`, `http.on`, `http.off`, `OutgoingRequest`, `HttpRetryConfig`; user asks "add auth header to every request" or "intercept response" or "token refresh on 401" or "retry on failure" or "log all requests".
-  SKIP: error type predicates — use `mongez-http-error-handling`; caching layer — use `mongez-http-caching`; streaming — use `mongez-http-streaming`.
+  TRIGGER when: `http.before`, `http.after`, `BeforeInterceptor`, `AfterInterceptor`, `AfterInterceptorContext`, `replay`, `http.on`, `http.off`, `OutgoingRequest`, `HttpRetryConfig`; user asks "add auth header to every request" or "intercept HTTP response" or "token refresh on 401" or "redirect to login on 401 globally" or "retry failed request" or "exponential backoff" or "log all requests" or "transform every response".
+  SKIP: error type predicates only (no interception) — use `mongez-http-error-handling`; caching layer setup — use `mongez-http-caching`; streaming connection — use `mongez-http-streaming`; user is using `axios.interceptors`, `fetch` middleware libraries (`fetch-intercept`, `wretch`), or framework-specific HTTP middleware (express, koa) without `@mongez/http`.
 ---
 
 # Interceptors & Events
@@ -74,6 +74,16 @@ http.after(async (result, { replay }) => {
   if (result.error?.isUnauthorized) {
     await refreshToken();
     return replay();
+  }
+});
+```
+
+## Global 401 redirect (simpler — no replay)
+
+```ts
+http.after((result) => {
+  if (result.error?.isUnauthorized) {
+    window.location.href = '/login';
   }
 });
 ```

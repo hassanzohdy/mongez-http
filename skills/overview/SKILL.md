@@ -1,9 +1,9 @@
 ---
 name: mongez-http-overview
 description: |
-  @mongez/http — native-fetch TypeScript HTTP client: `{data,error}` result pattern, per-request cancellation, typed `HttpError`, GET dedup, caching, retry, interceptors, and `Resource` RESTful helper. No Axios. Single runtime dep (`@mongez/concat-route`).
-  TRIGGER when: `Http`, `setCurrentHttp`, `getCurrentHttp`, `http`, `makeCancellable`, `CancellablePromise`, `HttpResult`, `HttpConfig`, `RequestOptions`, `CancellableAsyncIterable`, `ResourceService` imported from `@mongez/http`; user asks "set up mongez http" or "configure http client" or "what does @mongez/http export" or "install mongez http".
-  SKIP: making specific requests — use `mongez-http-client`; error handling — use `mongez-http-error-handling`; streaming SSE/NDJSON — use `mongez-http-streaming`; Resource CRUD — use `mongez-http-resource`.
+  @mongez/http setup and bootstrap — installing the package, configuring the global `Http` instance, `setCurrentHttp`/`getCurrentHttp`, and the exports table. No Axios. Single runtime dep (`@mongez/concat-route`).
+  TRIGGER when: `setCurrentHttp`, `getCurrentHttp` imported from `@mongez/http`; user asks "install @mongez/http" or "set up mongez http" or "bootstrap the http client" or "what does @mongez/http export" or "configure the global http instance".
+  SKIP: making requests — use `mongez-http-client`; error handling — use `mongez-http-error-handling`; streaming — use `mongez-http-streaming`; Resource CRUD — use `mongez-http-resource`; user is using `axios`, `ky`, `ofetch`, native `fetch`, or `@tanstack/react-query` without `@mongez/http`.
 ---
 
 # @mongez/http — Overview

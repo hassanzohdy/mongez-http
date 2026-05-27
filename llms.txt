@@ -43,22 +43,20 @@ const { data: users } = await usersResource.list({ page: 1 });
 
 ## Skills
 
-- [`skills/overview/SKILL.md`](skills/overview/SKILL.md) — Overview, exports, bootstrap
-  - *Auto-trigger:* Load when setting up or configuring `@mongez/http`, or asking what it exports.
-- [`skills/http-client/SKILL.md`](skills/http-client/SKILL.md) — Http class, HttpConfig, RequestOptions, all/race, cancellation
-  - *Auto-trigger:* Load when making requests with `http.get/post/put/patch/delete/all/race` or configuring `HttpConfig`/`RequestOptions`.
-- [`skills/error-handling/SKILL.md`](skills/error-handling/SKILL.md) — HttpError, HttpResult, status predicates
+- [`skills/overview/SKILL.md`](skills/overview/SKILL.md) — Bootstrap, exports table, package setup
+  - *Auto-trigger:* Load when installing or configuring `@mongez/http` globally with `setCurrentHttp`/`getCurrentHttp`.
+- [`skills/http-client/SKILL.md`](skills/http-client/SKILL.md) — Http class, request methods, HttpConfig, RequestOptions, cancellation, React patterns
+  - *Auto-trigger:* Load when calling `http.get/post/put/patch/delete/all/race`, `new Http(...)`, or configuring auth, timeout, putToPost, serializer, fetchCache, dedupeKey.
+- [`skills/error-handling/SKILL.md`](skills/error-handling/SKILL.md) — HttpError, HttpResult, status predicates, validation errors
   - *Auto-trigger:* Load when handling `HttpError`, checking `isNotFound`/`isUnauthorized`/`isValidationError`, or narrowing `HttpResult<T>`.
-- [`skills/streaming/SKILL.md`](skills/streaming/SKILL.md) — stream(), responseType stream, onDownloadProgress, SSE/NDJSON
-  - *Auto-trigger:* Load when using `http.stream()`, `responseType: "stream"`, SSE, NDJSON, or tracking download progress.
-- [`skills/interceptors/SKILL.md`](skills/interceptors/SKILL.md) — before/after interceptors, events, retry config
-  - *Auto-trigger:* Load when adding `before()`/`after()` interceptors, listening to lifecycle events, or configuring `HttpRetryConfig`.
+- [`skills/streaming/SKILL.md`](skills/streaming/SKILL.md) — stream(), responseType "stream", onDownloadProgress, SSE/NDJSON
+  - *Auto-trigger:* Load when using `http.stream()`, `responseType: "stream"`, SSE, NDJSON, or download progress bars.
+- [`skills/interceptors/SKILL.md`](skills/interceptors/SKILL.md) — before/after interceptors, events, retry config, 401 redirect
+  - *Auto-trigger:* Load when adding `before()`/`after()`, listening to lifecycle events, or configuring `HttpRetryConfig`.
 - [`skills/caching/SKILL.md`](skills/caching/SKILL.md) — CacheDriver, HttpCacheConfig, invalidate
   - *Auto-trigger:* Load when caching GET responses with a `CacheDriver`, setting `cacheKey`, or calling `invalidate`/`invalidateAll`.
-- [`skills/resource/SKILL.md`](skills/resource/SKILL.md) — Resource class, CRUD, publish, action, nested resources
-  - *Auto-trigger:* Load when using `Resource` subclasses for RESTful CRUD (`list`, `create`, `update`, `delete`, `publish`, `action`).
-- [`skills/recipes/SKILL.md`](skills/recipes/SKILL.md) — Recipes: React, React Query, 401, file upload, pagination
-  - *Auto-trigger:* Load when integrating `@mongez/http` with React, React Query, or asking for real-world usage patterns.
+- [`skills/resource/SKILL.md`](skills/resource/SKILL.md) — Resource class, CRUD, publish, action, pagination subclass
+  - *Auto-trigger:* Load when writing `class XResource extends Resource`, using CRUD methods, or building paginated/nested resources.
 
 ## Files
 

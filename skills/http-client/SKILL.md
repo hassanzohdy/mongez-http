@@ -1,12 +1,34 @@
 ---
 name: mongez-http-client
 description: |
-  @mongez/http `Http` class — `get`, `post`, `put`, `patch`, `delete`, `head`, `options`, `request`, concurrent `all`/`race`, `stream`, `invalidate`/`invalidateAll`, `extend`. Full `HttpConfig` (`baseURL`, `auth`, `timeout`, `headers`, `putToPost`, `serializer`, `fetchCache`, `dedupeKey`) and `RequestOptions` (`params`, `signal`, `responseType`, `data`, `cacheKey`, `throw`).
-  TRIGGER when: `http.get`, `http.post`, `http.put`, `http.patch`, `http.delete`, `http.all`, `http.race`, `http.extend`, `HttpConfig`, `RequestOptions`, `CancellablePromise`, `putToPost`, `dedupeKey`, `serializer`, `fetchCache`, `responseType`; user asks "make HTTP request" or "cancel request" or "configure auth" or "concurrent requests" or "parallel fetch".
-  SKIP: SSE/NDJSON streaming — use `mongez-http-streaming`; error predicates — use `mongez-http-error-handling`; Resource CRUD — use `mongez-http-resource`; caching driver — use `mongez-http-caching`; interceptors/retry — use `mongez-http-interceptors`.
+  @mongez/http `Http` class — `get`, `post`, `put`, `patch`, `delete`, `head`, `options`, `request`, concurrent `all`/`race`, `invalidate`/`invalidateAll`, `extend`. Per-request `.cancel()` and external `AbortSignal`. Full `HttpConfig` (`baseURL`, `auth`, `timeout`, `putToPost`, `serializer`, `fetchCache`, `dedupeKey`) and `RequestOptions` (`params`, `signal`, `responseType`, `data`, `throw`).
+  TRIGGER when: `http.get`, `http.post`, `http.put`, `http.patch`, `http.delete`, `http.head`, `http.options`, `http.request`, `http.all`, `http.race`, `http.extend`, `new Http(`, `putToPost`, `dedupeKey`, `serializer`, `fetchCache`, `responseType`; user asks "make HTTP request" or "cancel HTTP request" or "configure auth header" or "concurrent requests" or "parallel fetch" or "file upload Laravel API" or "abort request on unmount" or "React Query with mongez http".
+  SKIP: SSE/NDJSON streaming or `responseType: "stream"` — use `mongez-http-streaming`; error predicates (`isNotFound`, `isUnauthorized`) — use `mongez-http-error-handling`; CRUD via `Resource` subclass — use `mongez-http-resource`; cache driver setup — use `mongez-http-caching`; `before()`/`after()` interceptors and retry — use `mongez-http-interceptors`; user is using `axios`, `ky`, `ofetch`, native `fetch`, or `XMLHttpRequest` without `@mongez/http`.
 ---
 
 # Http class
+
+## Common patterns
+
+```ts
+// 90% of usage — destructure {data, error}
+const { data, error } = await http.get<User[]>('/users');
+if (error) { /* handle */ return; }
+console.log(data);
+
+// POST with body
+const { data: user } = await http.post<User>('/users', { name: 'Alice' });
+
+// Cancel from outside
+const req = http.get('/slow');
+req.cancel('component unmounted');
+
+// External AbortSignal (React Query, useEffect, etc.)
+const { signal } = new AbortController();
+const { data } = await http.get('/users', { signal });
+```
+
+## Class signature
 
 ```ts
 class Http {
@@ -29,14 +51,14 @@ class Http {
    */
   request<T>(method: HttpMethod | string, path: string, data?: HttpData, options?: RequestOptions): CancellablePromise<HttpResult<T>>
 
-  // Streaming — see streaming.md
+  // Streaming — see mongez-http-streaming skill
   stream<T>(path: string, options?: StreamRequestOptions): CancellableAsyncIterable<T>
 
   // Concurrent helpers (each returns a CancellablePromise — cancel cancels every inner request)
   all<T>(requests: CancellablePromise<T>[]): CancellablePromise<T[]>     // wait for all, never throws (per-request errors stay on each result)
   race<T>(requests: CancellablePromise<T>[]): CancellablePromise<T>      // first to settle wins; losers are cancelled
 
-  // Cache management
+  // Cache management — see mongez-http-caching skill
   invalidate(key: string): Promise<void>   // remove a single cache entry by key
   invalidateAll(): Promise<void>           // clear all cache entries (requires driver.clear())
 
@@ -44,7 +66,7 @@ class Http {
   extend(overrides: HttpConfig): Http        // returns new Http with merged config
   getConfig(): Readonly<HttpConfig>
 
-  // Interceptors
+  // Interceptors — see mongez-http-interceptors skill
   before(fn: BeforeInterceptor): this
   after<T>(fn: AfterInterceptor<T>): this   // runs on both success AND error results
 
@@ -110,28 +132,60 @@ interface RequestOptions {
 }
 ```
 
-## Cancellation
+## React — cancel on unmount
 
 ```ts
-const req = http.get<User[]>('/users');
-req.cancel('component unmounted');
+function useUser(id: number) {
+  const [user, setUser] = useState<User | null>(null);
 
-const { data, error } = await req;
-// error.isAborted === true
+  useEffect(() => {
+    const req = http.get<User>(`/users/${id}`);
+    req.then(({ data, error }) => {
+      if (error?.isAborted) return;     // ignore cancellations
+      if (data) setUser(data);
+    });
+    return () => req.cancel('unmounted');
+  }, [id]);
+
+  return user;
+}
 ```
 
-External signal (React Query / useEffect):
+## React Query integration
 
 ```ts
-const { signal } = new AbortController();
-const { data } = await http.get('/users', { signal });
+import { useQuery } from '@tanstack/react-query';
+
+useQuery({
+  queryKey: ['users', params],
+  queryFn: ({ signal }) =>
+    http.get('/users', { params, signal }).then(({ data, error }) => {
+      if (error) throw error;       // React Query expects throws
+      return data;
+    }),
+});
 ```
 
-## putToPost
+## Multi-tenant: different Http per resource
+
+```ts
+const publicHttp  = new Http({ baseURL: 'https://api.example.com/public' });
+const privateHttp = new Http({ baseURL: 'https://api.example.com/v2', auth: getToken });
+
+export const articlesResource = new ArticlesResource().useHttp(publicHttp);
+export const ordersResource   = new OrdersResource().useHttp(privateHttp);
+```
+
+## putToPost (Laravel file uploads)
 
 Useful for Laravel APIs that don't accept PUT/PATCH natively with file uploads:
 
 ```ts
 const http = new Http({ baseURL, putToPost: true, putMethodKey: '_method' });
 // PUT /users/1 { name } → POST /users/1 { name, _method: 'PUT' }
+
+const fd = new FormData();
+fd.append('avatar', file);
+fd.append('name', 'Alice');
+await http.put('/users/1', fd);   // sent as POST with _method=PUT
 ```

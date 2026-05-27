@@ -2,8 +2,8 @@
 name: mongez-http-resource
 description: |
   @mongez/http `Resource` class — zero-boilerplate RESTful CRUD: `list`, `get`, `create`, `update`, `patch`, `delete`, `bulkDelete`, `publish`, `action`, `path`, `actionPath`, `useHttp`. Lazy `http` getter from `getCurrentHttp()`. Extend with a `route` string. Implements `ResourceService`.
-  TRIGGER when: `Resource`, `ResourceService`, `usersResource.list`, `usersResource.create`, `usersResource.update`, `usersResource.delete`, `usersResource.publish`, `usersResource.action`, `bulkDelete`, `useHttp`, `route`, `defaultListParams`; user asks "CRUD class for endpoint" or "RESTful resource" or "publish/unpublish record" or "nested resource" or "bulk delete".
-  SKIP: raw `http.get`/`http.post` without Resource — use `mongez-http-client`; error handling on results — use `mongez-http-error-handling`.
+  TRIGGER when: `extends Resource`, `new Resource(`, `Resource` class imported from `@mongez/http`, `ResourceService`, `useHttp`, `defaultListParams`, `route =`, `bulkDelete`, `actionPath`; user asks "CRUD class for endpoint" or "RESTful resource wrapper" or "publish/unpublish record" or "nested resource" or "bulk delete by ids" or "pagination class for API" or "extend Resource with custom action".
+  SKIP: raw `http.get`/`http.post` without a Resource subclass — use `mongez-http-client`; error handling on results — use `mongez-http-error-handling`; user is using `@tanstack/react-query` mutations, `swr` resource hooks, or hand-rolled CRUD without `@mongez/http`.
 ---
 
 # Resource class
@@ -108,4 +108,23 @@ class PostCommentsResource extends Resource {
 
 const comments = new PostCommentsResource(5);
 await comments.list();   // GET /posts/5/comments
+```
+
+## Pagination helper subclass
+
+```ts
+class PaginatedResource<T> extends Resource {
+  async page(n: number, perPage = 20) {
+    return this.list<{ data: T[]; total: number }>({
+      page: n,
+      per_page: perPage,
+    });
+  }
+}
+
+class UsersResource extends PaginatedResource<User> {
+  route = '/users';
+}
+
+const { data } = await new UsersResource().page(2, 50);  // GET /users?page=2&per_page=50
 ```
