@@ -21,6 +21,42 @@ A robust, native-`fetch` HTTP client for TypeScript with:
 - **Before/after interceptors** (after-interceptors run on both success AND error results) and lifecycle events
 - **`Resource` class** — zero-boilerplate RESTful CRUD helper
 
+## Install
+
+```sh
+# npm
+npm install @mongez/http
+
+# yarn
+yarn add @mongez/http
+
+# pnpm
+pnpm add @mongez/http
+```
+
+Runs in any environment with `fetch`, `AbortController`, and `TextDecoder` (modern browsers, Node 18+, Bun, Deno). Single runtime dep: `@mongez/concat-route`.
+
+## Quick example
+
+The discriminated-union result pattern in action — no `try/catch`, no cast, typed error predicates for every common case:
+
+```ts
+import { Http } from "@mongez/http";
+
+const http = new Http({ baseURL: "https://api.example.com" });
+
+const { data, error } = await http.get<User[]>("/users");
+
+if (error) {
+  if (error.isNotFound)         return null;
+  if (error.isUnauthorized)     return redirect("/login");
+  if (error.isValidationError)  return showErrors(error.body);
+  return showToast(error.message);
+}
+
+// data is User[] here — TypeScript narrows automatically, no cast.
+```
+
 ## Exports
 
 | Name | Kind |
