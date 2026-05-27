@@ -1,3 +1,11 @@
+---
+name: mongez-http-client
+description: |
+  @mongez/http `Http` class — `get`, `post`, `put`, `patch`, `delete`, `head`, `options`, `request`, concurrent `all`/`race`, `stream`, `invalidate`/`invalidateAll`, `extend`. Full `HttpConfig` (`baseURL`, `auth`, `timeout`, `headers`, `putToPost`, `serializer`, `fetchCache`, `dedupeKey`) and `RequestOptions` (`params`, `signal`, `responseType`, `data`, `cacheKey`, `throw`).
+  TRIGGER when: `http.get`, `http.post`, `http.put`, `http.patch`, `http.delete`, `http.all`, `http.race`, `http.extend`, `HttpConfig`, `RequestOptions`, `CancellablePromise`, `putToPost`, `dedupeKey`, `serializer`, `fetchCache`, `responseType`; user asks "make HTTP request" or "cancel request" or "configure auth" or "concurrent requests" or "parallel fetch".
+  SKIP: SSE/NDJSON streaming — use `mongez-http-streaming`; error predicates — use `mongez-http-error-handling`; Resource CRUD — use `mongez-http-resource`; caching driver — use `mongez-http-caching`; interceptors/retry — use `mongez-http-interceptors`.
+---
+
 # Http class
 
 ```ts

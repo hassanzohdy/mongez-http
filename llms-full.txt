@@ -1,5 +1,11 @@
 # @mongez/http — Full Reference
 
+> **Auto-trigger when loading this full reference:** `Http`, `HttpError`, `Resource`, `CancellablePromise`, `CancellableAsyncIterable`, `ResourceService`, `CacheDriver`, `HttpConfig`, `RequestOptions`, `StreamRequestOptions`, `BeforeInterceptor`, `AfterInterceptor`, `AfterInterceptorContext`, `HttpRetryConfig`, `HttpCacheConfig`, `setCurrentHttp`, `getCurrentHttp`, `makeCancellable`, `http.get`, `http.post`, `http.stream`, `http.all`, `http.race`, `http.before`, `http.after`, `http.invalidate` imported from `@mongez/http`; user asks to make HTTP requests, handle errors, stream SSE/NDJSON, cache responses, write RESTful CRUD, intercept or retry requests, or download files with progress.
+>
+> **Skip when:** using `axios`, `ky`, `ofetch`, or native `fetch` directly without `@mongez/http`; framework-specific data fetchers like `swr` or `@tanstack/react-query` in isolation (unless wired to `@mongez/http`); Node.js `http`/`https` core modules.
+
+---
+
 ## Overview
 
 `@mongez/http` v3 is a zero-Axios, native-`fetch` HTTP client for TypeScript applications.
@@ -9,6 +15,7 @@ It replaces the old Axios-based `Endpoint` + `RestfulEndpoint` with a cleaner ar
 - **`Resource` class** — RESTful CRUD helper built on top of Http
 - **`{data, error}` pattern** — every method returns a discriminated union; no try/catch noise
 - **`CancellablePromise`** — `.cancel()` and `.signal` on every returned promise
+- **`CancellableAsyncIterable`** — `.cancel()` and `.error` on every stream
 - **`HttpError`** — structured error with status predicates
 
 Runtime dependency: `@mongez/concat-route` only.
@@ -29,13 +36,27 @@ new Http(config?: HttpConfig)
 interface HttpConfig {
   baseURL?: string
   auth?: string | ((req: OutgoingRequest) => string | null | undefined)
-  putToPost?: boolean          // default false
+  putToPost?: boolean          // default false — convert PUT→POST for file uploads
   putMethodKey?: string        // default "_method"
-  timeout?: number             // ms
+  timeout?: number             // ms, no timeout by default
   headers?: Record<string, string>
+  params?: HttpParams          // default query params merged into every request
   cache?: boolean | HttpCacheConfig
   retry?: HttpRetryConfig
   publishKey?: string          // default "published"
+
+  // Fetch-native options forwarded to every fetch() call
+  credentials?: RequestCredentials
+  mode?: RequestMode
+  keepalive?: boolean
+  redirect?: RequestRedirect
+  fetchCache?: RequestCache    // browser HTTP cache directive — distinct from app-level `cache`
+
+  // Custom body serializer (e.g. MessagePack/CBOR). FormData/Blob/string pass through.
+  serializer?: (data: unknown) => { body: BodyInit; contentType: string }
+
+  // Custom GET deduplication key — default keys by URL + serialised params.
+  dedupeKey?: (url: string, params?: HttpParams) => string
 }
 ```
 
@@ -46,17 +67,30 @@ interface HttpConfig {
 get<T>(path, options?)
 post<T>(path, data?, options?)
 put<T>(path, data?, options?)
-patch<T>(path, data?, options?)
+patch<T>(path, options?)          // body via options.data
 delete<T>(path, options?)
 head(path, options?)
+options<T>(path, options?)
+request<T>(method, path, data?, options?)   // escape hatch for any verb
 
-// Extend config
+// Streaming
+stream<T>(path, options?: StreamRequestOptions): CancellableAsyncIterable<T>
+
+// Concurrent helpers — cancel() cancels every inner request
+all<T>(requests: CancellablePromise<T>[]): CancellablePromise<T[]>   // all settle
+race<T>(requests: CancellablePromise<T>[]): CancellablePromise<T>    // first wins; rest cancelled
+
+// Cache management
+invalidate(key: string): Promise<void>
+invalidateAll(): Promise<void>     // requires CacheDriver.clear()
+
+// Config
 extend(overrides: HttpConfig): Http      // new instance, merged config
 getConfig(): Readonly<HttpConfig>
 
 // Interceptors
 before(fn: BeforeInterceptor): this
-after<T>(fn: AfterInterceptor<T>): this
+after<T>(fn: AfterInterceptor<T>): this  // runs on success AND error
 
 // Events
 on(event: string, handler: HttpEventHandler): this
@@ -69,8 +103,8 @@ off(event: string, handler: HttpEventHandler): this
 
 ```ts
 type HttpResult<T> =
-  | { data: T;    error: null;      status: number;      response: Response }
-  | { data: null; error: HttpError; status: number|null; response: Response|null }
+  | { data: T;    error: null;       status: number;       response: Response;        headers: Record<string, string>;       request: OutgoingRequest }
+  | { data: null; error: HttpError;  status: number | null; response: Response | null; headers: Record<string, string> | null; request: OutgoingRequest }
 ```
 
 ---
@@ -88,6 +122,19 @@ Factory: `makeCancellable(factory, externalSignal?)`
 
 ---
 
+## CancellableAsyncIterable<T>
+
+```ts
+type CancellableAsyncIterable<T> = AsyncIterable<T> & {
+  cancel(reason?: string): void
+  readonly error: HttpError | null   // set after iteration ends with an error
+}
+```
+
+Returned by `http.stream()`. Iteration ends silently on cancel; check `.error` afterwards.
+
+---
+
 ## RequestOptions
 
 ```ts
@@ -100,9 +147,21 @@ interface RequestOptions {
   retry?: boolean | Partial<HttpRetryConfig>
   throw?: boolean              // default false — throw HttpError instead of returning it
   timeout?: number
-  data?: unknown               // body for DELETE-with-body
+  data?: unknown               // body for PATCH / DELETE and any method needing a body
+  responseType?: 'json' | 'text' | 'blob' | 'arrayBuffer' | 'stream'
+  onDownloadProgress?: (event: DownloadProgressEvent) => void
+  onUploadProgress?: (event: UploadProgressEvent) => void
+
+  // Per-request fetch-native overrides
+  credentials?: RequestCredentials
+  mode?: RequestMode
+  keepalive?: boolean
+  redirect?: RequestRedirect
+  fetchCache?: RequestCache
 }
 ```
+
+`responseType: "stream"` returns raw `ReadableStream<Uint8Array>` — body is never read by the library. `onDownloadProgress` and `cache` are silently ignored when `responseType: "stream"` is set.
 
 ---
 
@@ -110,21 +169,25 @@ interface RequestOptions {
 
 ```ts
 class HttpError extends Error {
-  status: number | null
-  body: unknown
+  status: number | null        // null for network/abort/timeout
+  body: unknown                // parsed response body
   response: Response | null
+  headers: Record<string, string> | null
+  request: OutgoingRequest | null
   isAborted: boolean
   isTimeout: boolean
   isNetwork: boolean
 
-  isClientError(): boolean     // 4xx
-  isServerError(): boolean     // 5xx
-  isUnauthorized(): boolean    // 401
-  isForbidden(): boolean       // 403
-  isNotFound(): boolean        // 404
-  isValidationError(): boolean // 422
-  isRateLimited(): boolean     // 429
-  toJSON(): Record<string, unknown>
+  // Status predicates — getters, no () needed
+  get isClientError(): boolean     // 4xx
+  get isServerError(): boolean     // 5xx
+  get isUnauthorized(): boolean    // 401
+  get isForbidden(): boolean       // 403
+  get isNotFound(): boolean        // 404
+  get isValidationError(): boolean // 422
+  get isRateLimited(): boolean     // 429
+
+  toJSON(): Record<string, unknown>   // omits `request`
 }
 ```
 
@@ -141,11 +204,13 @@ class Resource {
   get<T>(id, options?): CancellablePromise<HttpResult<T>>
   create<T>(data, options?): CancellablePromise<HttpResult<T>>
   update<T>(id, data, options?): CancellablePromise<HttpResult<T>>
-  patch<T>(id, data, options?): CancellablePromise<HttpResult<T>>
+  patch<T>(id, options?): CancellablePromise<HttpResult<T>>   // body via options.data
   delete<T>(id, options?): CancellablePromise<HttpResult<T>>
   bulkDelete<T>(data, options?): CancellablePromise<HttpResult<T>>
   publish<T>(id, published, publishKey?, options?): CancellablePromise<HttpResult<T>>
+  action<T>(id, actionName, data?, options?, method?): CancellablePromise<HttpResult<T>>
   path(suffix?): string
+  actionPath(id, actionName): string
   useHttp(instance): this
 }
 ```
@@ -161,6 +226,7 @@ interface CacheDriver {
   get<T = unknown>(key: string): Promise<T | null | undefined>
   set(key: string, value: unknown, ttl?: number): Promise<void> | void
   remove?(key: string): Promise<void> | void
+  clear?(): Promise<void> | void   // required for invalidateAll()
 }
 ```
 
@@ -183,7 +249,9 @@ interface HttpRetryConfig {
   attempts: number
   delay: number                    // base ms
   backoff?: boolean                // default true — delay * 2^attempt
+  jitter?: boolean                 // default false — multiply delay by random [0.5, 1.0)
   retryOn?: number[]               // default [429, 500, 502, 503, 504]
+  onRetry?: (attempt: number, error: HttpError, delay: number) => void
 }
 ```
 
@@ -194,13 +262,48 @@ Network errors are always retried. Aborts and timeouts are never retried.
 ## Interceptors
 
 ```ts
-// Before: modify outgoing request
-type BeforeInterceptor = (req: OutgoingRequest) =>
-  OutgoingRequest | void | Promise<OutgoingRequest | void>
+// Before: modify outgoing request (receives read-only RequestOptions snapshot as 2nd arg)
+type BeforeInterceptor = (
+  req: OutgoingRequest,
+  options: Readonly<RequestOptions>,
+) => OutgoingRequest | void | Promise<OutgoingRequest | void>
 
-// After: transform successful result
-type AfterInterceptor<T> = (result: HttpResult<T>) =>
-  HttpResult<T> | void | Promise<HttpResult<T> | void>
+// After: transform result (success OR error); context.replay() re-fires original request
+interface AfterInterceptorContext<T> {
+  replay(): Promise<HttpResult<T>>
+}
+
+type AfterInterceptor<T> = (
+  result: HttpResult<T>,
+  context: AfterInterceptorContext<T>,
+) => HttpResult<T> | void | Promise<HttpResult<T> | void>
+```
+
+---
+
+## Streaming
+
+```ts
+interface StreamRequestOptions {
+  method?: HttpMethod          // default "GET"
+  data?: HttpData
+  format?: 'sse' | 'ndjson'   // default "sse"
+  parseLine?: (line: string) => unknown
+  params?: HttpParams
+  headers?: Record<string, string>
+  signal?: AbortSignal
+  timeout?: number
+  reconnect?: boolean              // default false
+  maxReconnectAttempts?: number    // default Infinity
+  reconnectDelay?: number          // default 3000 ms
+}
+```
+
+```ts
+for await (const chunk of http.stream<ChatChunk>('/chat', { method: 'POST', data: body })) {
+  process(chunk);
+}
+// stream.error is set if the stream ended with an error
 ```
 
 ---
@@ -232,7 +335,7 @@ export { http };
 | `src/HttpError.ts` | `HttpError` |
 | `src/Resource.ts` | `Resource` |
 | `src/Resource.types.ts` | `ResourceService` |
-| `src/cancellable.ts` | `CancellablePromise`, `makeCancellable` |
+| `src/cancellable.ts` | `CancellablePromise`, `CancellableAsyncIterable`, `makeCancellable` |
 | `src/current-http.ts` | `setCurrentHttp`, `getCurrentHttp` |
 | `src/Http.types.ts` | All shared types/interfaces |
 | `src/utils/params.ts` | `buildQueryString`, `appendParams` |
@@ -242,6 +345,14 @@ export { http };
 ---
 
 ## Changelog
+
+### 3.3.x
+- `responseType: "stream"` — raw `ReadableStream` pass-through
+- `http.all()` / `http.race()` — concurrent request helpers with cancel-all semantics
+- `HttpConfig.fetchCache` / `RequestOptions.fetchCache` — fetch-native `RequestCache` directive
+- `HttpConfig.dedupeKey` — custom GET deduplication key generator
+- `HttpConfig.serializer` — custom body serializer (MessagePack, CBOR, etc.)
+- `BeforeInterceptor` second param: `Readonly<RequestOptions>` — inspect per-request options in before-interceptors
 
 ### 3.0.0
 - Complete rewrite: native `fetch`, drop Axios

@@ -1,3 +1,11 @@
+---
+name: mongez-http-interceptors
+description: |
+  @mongez/http interceptors & lifecycle — `before()` (`BeforeInterceptor`, `OutgoingRequest` + read-only `RequestOptions`), `after()` (`AfterInterceptor`, `AfterInterceptorContext.replay()`), lifecycle events (`on`/`off`: `"request"`, `"response"`, `"error"`), and `HttpRetryConfig` (attempts, delay, backoff, jitter, retryOn, onRetry).
+  TRIGGER when: `http.before`, `http.after`, `BeforeInterceptor`, `AfterInterceptor`, `AfterInterceptorContext`, `replay`, `http.on`, `http.off`, `OutgoingRequest`, `HttpRetryConfig`; user asks "add auth header to every request" or "intercept response" or "token refresh on 401" or "retry on failure" or "log all requests".
+  SKIP: error type predicates — use `mongez-http-error-handling`; caching layer — use `mongez-http-caching`; streaming — use `mongez-http-streaming`.
+---
+
 # Interceptors & Events
 
 ## Before interceptors

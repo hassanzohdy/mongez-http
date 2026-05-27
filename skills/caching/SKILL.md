@@ -1,3 +1,11 @@
+---
+name: mongez-http-caching
+description: |
+  @mongez/http application-level caching — `CacheDriver` interface (get/set/remove/clear), `HttpCacheConfig` (driver, ttl, generateKey), global `cache` in `HttpConfig`, per-request `cache`/`cacheKey` override, `invalidate`/`invalidateAll`. GET requests only. Works with `@mongez/cache` drivers.
+  TRIGGER when: `CacheDriver`, `HttpCacheConfig`, `cacheKey`, `http.invalidate`, `http.invalidateAll`, `cache` option in `HttpConfig` or `RequestOptions`; user asks "cache HTTP GET responses" or "TTL cache" or "invalidate cache" or "use @mongez/cache driver" or "in-memory cache" or "localStorage cache".
+  SKIP: fetch-native `RequestCache` browser HTTP cache (`fetchCache` option) — see `mongez-http-client`; interceptors — see `mongez-http-interceptors`; caching streamed responses — not supported.
+---
+
 # Caching
 
 Caching applies to **GET requests only**. Any `CacheDriver`-compatible store works — including `@mongez/cache` drivers.

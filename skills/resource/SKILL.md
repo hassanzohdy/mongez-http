@@ -1,3 +1,11 @@
+---
+name: mongez-http-resource
+description: |
+  @mongez/http `Resource` class — zero-boilerplate RESTful CRUD: `list`, `get`, `create`, `update`, `patch`, `delete`, `bulkDelete`, `publish`, `action`, `path`, `actionPath`, `useHttp`. Lazy `http` getter from `getCurrentHttp()`. Extend with a `route` string. Implements `ResourceService`.
+  TRIGGER when: `Resource`, `ResourceService`, `usersResource.list`, `usersResource.create`, `usersResource.update`, `usersResource.delete`, `usersResource.publish`, `usersResource.action`, `bulkDelete`, `useHttp`, `route`, `defaultListParams`; user asks "CRUD class for endpoint" or "RESTful resource" or "publish/unpublish record" or "nested resource" or "bulk delete".
+  SKIP: raw `http.get`/`http.post` without Resource — use `mongez-http-client`; error handling on results — use `mongez-http-error-handling`.
+---
+
 # Resource class
 
 Zero-boilerplate RESTful CRUD helper. Extend and set `route`.

@@ -33,18 +33,39 @@ const { data: users } = await usersResource.list({ page: 1 });
 
 - `HttpResult<T>` — `{ data: T; error: null } | { data: null; error: HttpError }`
 - `CancellablePromise<T>` — `Promise<T> & { cancel(reason?): void; signal: AbortSignal }`
-- `HttpError` — status, body, isAborted, isTimeout, isNetwork, isNotFound(), isValidationError(), …
-- `HttpConfig` — baseURL, auth, timeout, headers, cache, retry, putToPost, publishKey
-- `RequestOptions` — params, headers, signal, cache, cacheKey, retry, throw, timeout, data
-- `CacheDriver` — get / set / remove interface
+- `CancellableAsyncIterable<T>` — returned by `stream()`; has `.cancel()` and `.error`
+- `HttpError` — status, body, isAborted, isTimeout, isNetwork, isNotFound, isValidationError, …
+- `HttpConfig` — baseURL, auth, timeout, headers, cache, retry, putToPost, publishKey, serializer, fetchCache, dedupeKey
+- `RequestOptions` — params, headers, signal, cache, cacheKey, retry, throw, timeout, data, responseType, fetchCache, onDownloadProgress
+- `StreamRequestOptions` — method, data, format (sse/ndjson), parseLine, reconnect, reconnectDelay
+- `CacheDriver` — get / set / remove / clear interface
 - `ResourceService` — list / get / create / update / patch / delete / bulkDelete / publish
+
+## Skills
+
+- [`skills/overview/SKILL.md`](skills/overview/SKILL.md) — Overview, exports, bootstrap
+  - *Auto-trigger:* Load when setting up or configuring `@mongez/http`, or asking what it exports.
+- [`skills/http-client/SKILL.md`](skills/http-client/SKILL.md) — Http class, HttpConfig, RequestOptions, all/race, cancellation
+  - *Auto-trigger:* Load when making requests with `http.get/post/put/patch/delete/all/race` or configuring `HttpConfig`/`RequestOptions`.
+- [`skills/error-handling/SKILL.md`](skills/error-handling/SKILL.md) — HttpError, HttpResult, status predicates
+  - *Auto-trigger:* Load when handling `HttpError`, checking `isNotFound`/`isUnauthorized`/`isValidationError`, or narrowing `HttpResult<T>`.
+- [`skills/streaming/SKILL.md`](skills/streaming/SKILL.md) — stream(), responseType stream, onDownloadProgress, SSE/NDJSON
+  - *Auto-trigger:* Load when using `http.stream()`, `responseType: "stream"`, SSE, NDJSON, or tracking download progress.
+- [`skills/interceptors/SKILL.md`](skills/interceptors/SKILL.md) — before/after interceptors, events, retry config
+  - *Auto-trigger:* Load when adding `before()`/`after()` interceptors, listening to lifecycle events, or configuring `HttpRetryConfig`.
+- [`skills/caching/SKILL.md`](skills/caching/SKILL.md) — CacheDriver, HttpCacheConfig, invalidate
+  - *Auto-trigger:* Load when caching GET responses with a `CacheDriver`, setting `cacheKey`, or calling `invalidate`/`invalidateAll`.
+- [`skills/resource/SKILL.md`](skills/resource/SKILL.md) — Resource class, CRUD, publish, action, nested resources
+  - *Auto-trigger:* Load when using `Resource` subclasses for RESTful CRUD (`list`, `create`, `update`, `delete`, `publish`, `action`).
+- [`skills/recipes/SKILL.md`](skills/recipes/SKILL.md) — Recipes: React, React Query, 401, file upload, pagination
+  - *Auto-trigger:* Load when integrating `@mongez/http` with React, React Query, or asking for real-world usage patterns.
 
 ## Files
 
 - `src/Http.ts` — main class
 - `src/HttpError.ts` — error class
 - `src/Resource.ts` — RESTful resource helper
-- `src/cancellable.ts` — CancellablePromise factory
+- `src/cancellable.ts` — CancellablePromise / CancellableAsyncIterable factory
 - `src/current-http.ts` — setCurrentHttp / getCurrentHttp
 - `src/Http.types.ts` — all type definitions
 - `src/utils/params.ts` — buildQueryString, appendParams

@@ -1,3 +1,11 @@
+---
+name: mongez-http-streaming
+description: |
+  @mongez/http streaming — `stream()` for SSE/NDJSON async iteration (`CancellableAsyncIterable`); `responseType: "stream"` for raw `ReadableStream`; `onDownloadProgress` (`DownloadProgressEvent`) for progress bars; `StreamRequestOptions` (format, parseLine, reconnect, reconnectDelay, maxReconnectAttempts).
+  TRIGGER when: `http.stream`, `CancellableAsyncIterable`, `StreamRequestOptions`, `responseType: "stream"`, `onDownloadProgress`, `DownloadProgressEvent`, `format: "sse"`, `format: "ndjson"`, `parseLine`, `reconnect`; user asks "stream SSE" or "OpenAI chat stream" or "NDJSON" or "download progress" or "raw ReadableStream" or "pipe to file" or "async iterable".
+  SKIP: application-level cache of streamed responses — not supported; upload progress — native `fetch` has none (use `XMLHttpRequest`); regular JSON responses — use `mongez-http-client`.
+---
+
 # Streaming, progress & responseType
 
 ## stream()

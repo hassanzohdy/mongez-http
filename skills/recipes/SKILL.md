@@ -1,3 +1,11 @@
+---
+name: mongez-http-recipes
+description: |
+  @mongez/http real-world recipes — React `useEffect` cancel on unmount, React Query `queryFn` with abort `signal`, global 401 redirect via `after()`, Laravel `putToPost` file upload, multi-tenant `Http` instances, 422 validation-error body extraction, paginated `Resource` subclass.
+  TRIGGER when: code imports both `@mongez/http` and React or `@tanstack/react-query`; user asks "mongez http with React" or "cancel request on unmount" or "React Query with http" or "global 401 handler" or "file upload with PUT" or "pagination resource" or "validation errors 422".
+  SKIP: API reference for individual types — use `mongez-http-client`, `mongez-http-error-handling`, `mongez-http-resource`, or `mongez-http-interceptors` instead.
+---
+
 # Recipes
 
 ## React — cancel on unmount

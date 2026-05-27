@@ -1,3 +1,11 @@
+---
+name: mongez-http-overview
+description: |
+  @mongez/http — native-fetch TypeScript HTTP client: `{data,error}` result pattern, per-request cancellation, typed `HttpError`, GET dedup, caching, retry, interceptors, and `Resource` RESTful helper. No Axios. Single runtime dep (`@mongez/concat-route`).
+  TRIGGER when: `Http`, `setCurrentHttp`, `getCurrentHttp`, `http`, `makeCancellable`, `CancellablePromise`, `HttpResult`, `HttpConfig`, `RequestOptions`, `CancellableAsyncIterable`, `ResourceService` imported from `@mongez/http`; user asks "set up mongez http" or "configure http client" or "what does @mongez/http export" or "install mongez http".
+  SKIP: making specific requests — use `mongez-http-client`; error handling — use `mongez-http-error-handling`; streaming SSE/NDJSON — use `mongez-http-streaming`; Resource CRUD — use `mongez-http-resource`.
+---
+
 # @mongez/http — Overview
 
 **Version:** 3.x | **Runtime deps:** `@mongez/concat-route` only | **No Axios**
