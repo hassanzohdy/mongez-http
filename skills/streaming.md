@@ -108,7 +108,7 @@ useEffect(() => {
 Controls how the response body is decoded. Add to any `get()` / `post()` / etc. call.
 
 ```ts
-type ResponseType = 'json' | 'text' | 'blob' | 'arrayBuffer'
+type ResponseType = 'json' | 'text' | 'blob' | 'arrayBuffer' | 'stream'
 ```
 
 ```ts
@@ -121,13 +121,50 @@ const { data } = await http.get('/image.png', { responseType: 'blob' });
 const { data } = await http.get('/binary', { responseType: 'arrayBuffer' });
 const { data } = await http.get('/api', { responseType: 'json' });
 
-// File download example
+// File download example (browser)
 const { data: blob } = await http.get('/exports/report.xlsx', { responseType: 'blob' });
 const url = URL.createObjectURL(blob as Blob);
 const a = document.createElement('a');
 a.href = url; a.download = 'report.xlsx'; a.click();
 URL.revokeObjectURL(url);
 ```
+
+### `responseType: "stream"` — raw ReadableStream
+
+Returns `response.body` (a Web Streams `ReadableStream<Uint8Array>`) completely untouched.
+The body is **never read by the library** — it is handed directly to the caller for piping.
+
+> `onDownloadProgress` and `cache` are silently ignored when `responseType: "stream"` is
+> set — they both require reading the body internally, which would consume it.
+
+**Node.js** — pipe to a file write stream (replaces `axios` `responseType: "stream"`):
+
+```ts
+import { Readable } from 'stream';
+import { createWriteStream } from 'fs';
+
+const { data, error } = await http.get('/large-file.zip', { responseType: 'stream' });
+if (error) throw error;
+
+const writer = createWriteStream('./large-file.zip');
+await new Promise<void>((resolve, reject) => {
+  const readable = Readable.fromWeb(data as ReadableStream);
+  readable.pipe(writer);
+  writer.on('finish', resolve);
+  writer.on('error', reject);
+});
+```
+
+**Browser** — consume as a blob or use with the Streams API:
+
+```ts
+const { data } = await http.get('/video.mp4', { responseType: 'stream' });
+// Wrap back in a Response for convenient blob/text conversion:
+const blob = await new Response(data as ReadableStream).blob();
+```
+
+**Error responses** are handled normally — even with `responseType: "stream"`, a non-2xx
+status still returns `{ data: null, error: HttpError }` with `error.body` populated.
 
 ---
 

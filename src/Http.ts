@@ -952,6 +952,34 @@ export class Http {
       clearTimeout(timeoutId);
     }
 
+    // ── Stream fast-path ──────────────────────────────────────────────────────
+    // responseType:"stream" hands the caller the raw ReadableStream untouched.
+    // onDownloadProgress and cache are silently bypassed — reading the body here
+    // would consume it before the caller can pipe it anywhere.
+    if (options.responseType === "stream") {
+      if (!response.ok) {
+        // Read the body for error responses so HttpError.body is still populated.
+        const errorBody = await parseBody(response);
+        throw new HttpError({
+          message: `HTTP ${response.status} ${response.statusText}`,
+          status: response.status,
+          body: errorBody,
+          response,
+          headers: headersToObject(response.headers),
+          request: req,
+        });
+      }
+      const streamResult: HttpResult<T> = {
+        data: response.body as unknown as T,
+        error: null,
+        status: response.status,
+        response,
+        headers: headersToObject(response.headers),
+        request: req,
+      };
+      return this.runAfterInterceptors<T>(streamResult, replayCtx, isReplay, req);
+    }
+
     // ── Parse body ────────────────────────────────────────────────────────────
     const parsedBody = options.onDownloadProgress
       ? await readBodyWithProgress(response, options.onDownloadProgress, options.responseType)

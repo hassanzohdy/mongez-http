@@ -89,7 +89,7 @@ interface RequestOptions {
   throw?: boolean                                         // default false
   timeout?: number
   data?: unknown                                          // body for PATCH / DELETE and any method needing a body
-  responseType?: 'json' | 'text' | 'blob' | 'arrayBuffer' // default: auto-detect from Content-Type
+  responseType?: 'json' | 'text' | 'blob' | 'arrayBuffer' | 'stream' // "stream" → raw ReadableStream; body not read by library
   onDownloadProgress?: (event: DownloadProgressEvent) => void
   onUploadProgress?: (event: UploadProgressEvent) => void // string/ArrayBuffer bodies only — FormData not supported
 

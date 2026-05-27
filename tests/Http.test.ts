@@ -888,6 +888,94 @@ describe("Http", () => {
     });
   });
 
+  // ── responseType: "stream" ───────────────────────────────────────────────────
+
+  describe('responseType: "stream"', () => {
+    it("returns response.body as a ReadableStream on success", async () => {
+      const encoder = new TextEncoder();
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(encoder.encode("chunk"));
+              controller.close();
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/octet-stream" } },
+        ),
+      );
+
+      const { data, error } = await http.get("/file.bin", { responseType: "stream" });
+      expect(error).toBeNull();
+      expect(data).toBeInstanceOf(ReadableStream);
+    });
+
+    it("the caller can read chunks from the returned stream", async () => {
+      const encoder = new TextEncoder();
+      const payload = "hello binary world";
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(encoder.encode(payload));
+              controller.close();
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/octet-stream" } },
+        ),
+      );
+
+      const { data } = await http.get<ReadableStream>("/download", { responseType: "stream" });
+      const reader = (data as ReadableStream<Uint8Array>).getReader();
+      const chunks: Uint8Array[] = [];
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value!);
+      }
+      expect(new TextDecoder().decode(chunks[0])).toBe(payload);
+    });
+
+    it("returns error on non-ok response — body is still populated in HttpError", async () => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+        new Response(JSON.stringify({ message: "Not found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+      const { data, error } = await http.get("/missing", { responseType: "stream" });
+      expect(data).toBeNull();
+      expect(error).toBeInstanceOf(HttpError);
+      expect(error!.status).toBe(404);
+      expect(error!.isNotFound).toBe(true);
+    });
+
+    it("does not consume the body — stream is handed to caller untouched", async () => {
+      const encoder = new TextEncoder();
+      const readSpy = vi.fn();
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode("data"));
+          controller.close();
+        },
+        pull: readSpy,
+      });
+
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+        new Response(stream, {
+          status: 200,
+          headers: { "Content-Type": "application/octet-stream" },
+        }),
+      );
+
+      const { data } = await http.get("/raw", { responseType: "stream" });
+      // The library must not have pulled from the stream before handing it over.
+      expect(readSpy).not.toHaveBeenCalled();
+      expect(data).toBeInstanceOf(ReadableStream);
+    });
+  });
+
   // ── serializer (item 11) ─────────────────────────────────────────────────────
 
   describe("HttpConfig.serializer", () => {

@@ -319,8 +319,37 @@ export interface HttpConfig {
 /**
  * Controls how the response body is decoded.
  * Default: auto-detect from Content-Type (json → JSON, otherwise text).
+ *
+ * | Value           | `data` type      | Notes                                          |
+ * |-----------------|------------------|------------------------------------------------|
+ * | `"json"`        | `T`              | Force JSON parse regardless of Content-Type.   |
+ * | `"text"`        | `string`         | Force text regardless of Content-Type.         |
+ * | `"blob"`        | `Blob`           | Browser file download / object URL.            |
+ * | `"arrayBuffer"` | `ArrayBuffer`    | Binary buffer; wrap in `Buffer.from()` in Node.|
+ * | `"stream"`      | `ReadableStream` | **Raw byte stream — body is not read at all.** |
+ *
+ * ### `"stream"` — raw ReadableStream
+ *
+ * Returns `response.body` (the Web Streams API `ReadableStream<Uint8Array>`) untouched.
+ * Use this for large file downloads or when you need to pipe the response somewhere.
+ *
+ * **Node.js:** convert to a Node.js `Readable` for `.pipe()` support:
+ * ```ts
+ * import { Readable } from 'stream';
+ * const { data } = await http.get('/file.zip', { responseType: 'stream' });
+ * Readable.fromWeb(data as ReadableStream).pipe(writeStream);
+ * ```
+ *
+ * **Browser:** use a `ReadableStream` directly or wrap in a `Response`:
+ * ```ts
+ * const { data } = await http.get('/video.mp4', { responseType: 'stream' });
+ * const blob = await new Response(data).blob();
+ * ```
+ *
+ * > `onDownloadProgress` and `cache` are silently ignored in stream mode —
+ * > the body must reach the caller unopened.
  */
-export type ResponseType = "json" | "text" | "blob" | "arrayBuffer";
+export type ResponseType = "json" | "text" | "blob" | "arrayBuffer" | "stream";
 
 // ─── Download progress ───────────────────────────────────────────────────────
 
