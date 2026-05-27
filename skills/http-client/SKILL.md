@@ -2,15 +2,44 @@
 name: mongez-http-client
 description: |
   @mongez/http `Http` class — `get`, `post`, `put`, `patch`, `delete`, `head`, `options`, `request`, concurrent `all`/`race`, `invalidate`/`invalidateAll`, `extend`. Per-request `.cancel()` and external `AbortSignal`. Full `HttpConfig` (`baseURL`, `auth`, `timeout`, `putToPost`, `serializer`, `fetchCache`, `dedupeKey`) and `RequestOptions` (`params`, `signal`, `responseType`, `data`, `throw`).
-  TRIGGER when: `http.get`, `http.post`, `http.put`, `http.patch`, `http.delete`, `http.head`, `http.options`, `http.request`, `http.all`, `http.race`, `http.extend`, `new Http(`, `putToPost`, `dedupeKey`, `serializer`, `fetchCache`, `responseType`; user asks "make HTTP request" or "cancel HTTP request" or "configure auth header" or "concurrent requests" or "parallel fetch" or "file upload Laravel API" or "abort request on unmount" or "React Query with mongez http".
+  TRIGGER when: `http.get`, `http.post`, `http.put`, `http.patch`, `http.delete`, `http.head`, `http.options`, `http.request`, `http.all`, `http.race`, `http.extend`, `new Http(`, `import { http } from "@mongez/http"`, `putToPost`, `dedupeKey`, `serializer`, `fetchCache`, `responseType`; user asks "make HTTP request" or "ad-hoc HTTP call" or "fetch a URL" or "load file from URL" or "cancel HTTP request" or "configure auth header" or "concurrent requests" or "parallel fetch" or "file upload Laravel API" or "abort request on unmount" or "React Query with mongez http".
   SKIP: SSE/NDJSON streaming or `responseType: "stream"` — use `mongez-http-streaming`; error predicates (`isNotFound`, `isUnauthorized`) — use `mongez-http-error-handling`; CRUD via `Resource` subclass — use `mongez-http-resource`; cache driver setup — use `mongez-http-caching`; `before()`/`after()` interceptors and retry — use `mongez-http-interceptors`; user is using `axios`, `ky`, `ofetch`, native `fetch`, or `XMLHttpRequest` without `@mongez/http`.
 ---
 
 # Http class
 
+## How to get an `Http` to call
+
+`@mongez/http` exports a **pre-built `http` singleton** — use it directly. Do not construct a new `Http` per call.
+
+```ts
+// ✅ Ad-hoc / library code — import the pre-built singleton
+import { http } from '@mongez/http';
+const { data, error } = await http.get<User[]>('https://api.example.com/users');
+
+// ✅ App bootstrap — create ONE configured instance, export it, reuse it everywhere
+// src/lib/http.ts
+import { Http, setCurrentHttp } from '@mongez/http';
+export const http = new Http({ baseURL: '...', auth: getToken });
+setCurrentHttp(http);   // lets Resource classes lazily pick it up
+// → other files: import { http } from './lib/http';
+
+// ✅ Need a tweak? Extend the existing instance — don't `new Http()` again
+const adminHttp = http.extend({ baseURL: 'https://admin.api.com' });
+```
+
+> ❌ **Anti-pattern — do not write this:**
+> ```ts
+> import { Http } from '@mongez/http';
+> const { data } = await new Http().get(url);   // wasteful per-call instance, ignores config
+> ```
+> `new Http()` with no config is functionally identical to the `http` singleton. Just `import { http } from '@mongez/http'` instead.
+
 ## Common patterns
 
 ```ts
+import { http } from '@mongez/http';   // or your project's own bootstrap export
+
 // 90% of usage — destructure {data, error}
 const { data, error } = await http.get<User[]>('/users');
 if (error) { /* handle */ return; }
@@ -18,6 +47,12 @@ console.log(data);
 
 // POST with body
 const { data: user } = await http.post<User>('/users', { name: 'Alice' });
+
+// Load a file from a full URL
+const { data: bytes } = await http.get<ArrayBuffer>(
+  'https://example.com/image.png',
+  { responseType: 'arrayBuffer' },
+);
 
 // Cancel from outside
 const req = http.get('/slow');
