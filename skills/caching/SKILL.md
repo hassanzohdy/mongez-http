@@ -2,8 +2,6 @@
 name: mongez-http-caching
 description: |
   @mongez/http application-level caching — `CacheDriver` interface (get/set/remove/clear), `HttpCacheConfig` (driver, ttl, generateKey), global `cache` in `HttpConfig`, per-request `cache`/`cacheKey` override, `invalidate`/`invalidateAll`. GET requests only. Works with `@mongez/cache` drivers, in-memory `Map`, `localStorage`, etc.
-  TRIGGER when: `CacheDriver`, `HttpCacheConfig`, `cacheKey`, `http.invalidate`, `http.invalidateAll`, `cache` option in `HttpConfig` or `RequestOptions`; user asks "cache HTTP GET responses" or "TTL cache for API" or "invalidate cached response" or "in-memory HTTP cache" or "localStorage HTTP cache" or "use @mongez/cache driver".
-  SKIP: fetch-native browser HTTP cache (`fetchCache` option, `RequestCache`) — see `mongez-http-client`; interceptors that hand-roll caching — see `mongez-http-interceptors`; caching streamed responses — not supported; user is using `@tanstack/react-query` query cache, `swr` cache, browser `Cache API`, or raw `localStorage`/`sessionStorage` without `@mongez/http`.
 ---
 
 # Caching

@@ -2,8 +2,6 @@
 name: mongez-http-client
 description: |
   @mongez/http `Http` class — `get`, `post`, `put`, `patch`, `delete`, `head`, `options`, `request`, concurrent `all`/`race`, `invalidate`/`invalidateAll`, `extend`. Per-request `.cancel()` and external `AbortSignal`. Full `HttpConfig` (`baseURL`, `auth`, `timeout`, `putToPost`, `serializer`, `fetchCache`, `dedupeKey`) and `RequestOptions` (`params`, `signal`, `responseType`, `data`, `throw`).
-  TRIGGER when: `http.get`, `http.post`, `http.put`, `http.patch`, `http.delete`, `http.head`, `http.options`, `http.request`, `http.all`, `http.race`, `http.extend`, `new Http(`, `import { http } from "@mongez/http"`, `putToPost`, `dedupeKey`, `serializer`, `fetchCache`, `responseType`; user asks "make HTTP request" or "ad-hoc HTTP call" or "fetch a URL" or "load file from URL" or "cancel HTTP request" or "configure auth header" or "concurrent requests" or "parallel fetch" or "file upload Laravel API" or "abort request on unmount" or "React Query with mongez http".
-  SKIP: SSE/NDJSON streaming or `responseType: "stream"` — use `mongez-http-streaming`; error predicates (`isNotFound`, `isUnauthorized`) — use `mongez-http-error-handling`; CRUD via `Resource` subclass — use `mongez-http-resource`; cache driver setup — use `mongez-http-caching`; `before()`/`after()` interceptors and retry — use `mongez-http-interceptors`; user is using `axios`, `ky`, `ofetch`, native `fetch`, or `XMLHttpRequest` without `@mongez/http`.
 ---
 
 # Http class

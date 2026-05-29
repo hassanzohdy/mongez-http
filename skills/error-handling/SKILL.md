@@ -2,8 +2,6 @@
 name: mongez-http-error-handling
 description: |
   @mongez/http `HttpError` and `HttpResult<T>` — status predicates (`isNotFound`, `isUnauthorized`, `isForbidden`, `isValidationError`, `isRateLimited`, `isClientError`, `isServerError`), runtime flags (`isAborted`, `isTimeout`, `isNetwork`), `toJSON`. `{data, error}` discriminated union; opt-in `throw: true` mode; TypeScript type narrowing.
-  TRIGGER when: `HttpError`, `HttpResult`, `error.isAborted`, `error.isTimeout`, `error.isNotFound`, `error.isUnauthorized`, `error.isForbidden`, `error.isValidationError`, `error.isRateLimited`, `error.isNetwork`, `error.body`, `{ throw: true }`; user asks "handle HTTP errors" or "check if 404" or "detect aborted request" or "handle 422 validation errors" or "form validation errors from API" or "catch network error".
-  SKIP: interceptors that transform/replay errors — use `mongez-http-interceptors`; retry on error — use `mongez-http-interceptors`; stream errors (set on `stream.error`) — use `mongez-http-streaming`; user is using `axios` (`error.response`), raw `fetch` + `try/catch`, or `try/catch` patterns without `@mongez/http`.
 ---
 
 # Error handling

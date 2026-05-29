@@ -2,8 +2,6 @@
 name: mongez-http-recipes
 description: |
   Idiomatic composition recipes for `@mongez/http` — auth interceptor with token refresh on 401 via `replay()`, built-in retry with exponential backoff and jitter, cancel-on-unmount in React via `.cancel()`, multipart file upload with abort, typed CRUD via a `Resource` subclass, deduping identical concurrent requests with `dedupeKey`, and response caching by URL.
-  TRIGGER when: code composes multiple `Http` features (interceptors + cache, abort + retry, Resource + auth); user asks "show me an end-to-end auth flow", "how do I retry with backoff", "how do I cancel HTTP requests on unmount in React", "how do I upload a file with progress", or "how do I dedupe concurrent identical requests".
-  SKIP: single-method ad-hoc calls — load `mongez-http-client` instead; per-feature dives — load `mongez-http-interceptors`, `mongez-http-caching`, `mongez-http-error-handling`, `mongez-http-streaming`, or `mongez-http-resource`; first-time setup — load `mongez-http-overview`; users on `axios`, `ofetch`, native `fetch`, or `XMLHttpRequest` without `@mongez/http`.
 ---
 
 # Recipes

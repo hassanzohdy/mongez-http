@@ -2,8 +2,6 @@
 name: mongez-http-resource
 description: |
   @mongez/http `Resource` class — zero-boilerplate RESTful CRUD: `list`, `get`, `create`, `update`, `patch`, `delete`, `bulkDelete`, `publish`, `action`, `path`, `actionPath`, `useHttp`. Lazy `http` getter from `getCurrentHttp()`. Extend with a `route` string. Implements `ResourceService`.
-  TRIGGER when: `extends Resource`, `new Resource(`, `Resource` class imported from `@mongez/http`, `ResourceService`, `useHttp`, `defaultListParams`, `route =`, `bulkDelete`, `actionPath`; user asks "CRUD class for endpoint" or "RESTful resource wrapper" or "publish/unpublish record" or "nested resource" or "bulk delete by ids" or "pagination class for API" or "extend Resource with custom action".
-  SKIP: raw `http.get`/`http.post` without a Resource subclass — use `mongez-http-client`; error handling on results — use `mongez-http-error-handling`; user is using `@tanstack/react-query` mutations, `swr` resource hooks, or hand-rolled CRUD without `@mongez/http`.
 ---
 
 # Resource class
