@@ -4,6 +4,14 @@ All notable changes to `@mongez/http` are documented here. The format follows [K
 
 ---
 
+## [3.3.7]
+
+### Changed
+
+- **`llms.txt` blurb now uses the `>` blockquote convention** to match every other `@mongez/*` package, so the ecosystem index extracts it consistently. No code/API changes.
+
+---
+
 ## [3.3.6]
 
 ### Added

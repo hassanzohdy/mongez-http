@@ -1,6 +1,6 @@
 # @mongez/http
 
-Robust native-fetch HTTP client for TypeScript. Returns `{data, error}` discriminated unions. Per-request `.cancel()`. Typed errors. Caching, retry, interceptors. `Resource` class for RESTful CRUD.
+> Robust native-fetch HTTP client for TypeScript. Returns `{data, error}` discriminated unions. Per-request `.cancel()`. Typed errors. Caching, retry, interceptors. `Resource` class for RESTful CRUD.
 
 ## Install
 
