@@ -1,7 +1,7 @@
 ---
 name: mongez-http-client
 description: |
-  @mongez/http `Http` class — `get`, `post`, `put`, `patch`, `delete`, `head`, `options`, `request`, concurrent `all`/`race`, `invalidate`/`invalidateAll`, `extend`. Per-request `.cancel()` and external `AbortSignal`. Full `HttpConfig` (`baseURL`, `auth`, `timeout`, `putToPost`, `serializer`, `fetchCache`, `dedupeKey`) and `RequestOptions` (`params`, `signal`, `responseType`, `data`, `throw`).
+  @mongez/http `Http` class — making HTTP/API requests and **replacing axios/fetch** with `get`, `post`, `put`, `patch`, `delete`, `head`, `options`, `request`, concurrent `all`/`race`, `invalidate`/`invalidateAll`, `extend`. Covers **typing responses with a generic** (`http.get<User>()` — the default is `unknown`, so `data.first_name` won't type-check without it) and narrowing the `{ data, error }` discriminated union. Per-request `.cancel()` and external `AbortSignal`. Full `HttpConfig` (`baseURL`, `auth`, `timeout`, `putToPost`, `serializer`, `fetchCache`, `dedupeKey`) and `RequestOptions` (`params`, `signal`, `responseType`, `data`, `throw`).
 ---
 
 # Http class
@@ -32,6 +32,33 @@ const adminHttp = http.extend({ baseURL: 'https://admin.api.com' });
 > const { data } = await new Http().get(url);   // wasteful per-call instance, ignores config
 > ```
 > `new Http()` with no config is functionally identical to the `http` singleton. Just `import { http } from '@mongez/http'` instead.
+
+## Type the response — always pass a generic
+
+Every request method is generic with a default of `unknown`:
+`get<T = unknown>(path, options?): CancellablePromise<HttpResult<T>>`. If you
+**omit the type**, `data` is `unknown` and TypeScript rejects any property
+access — `data.first_name` won't compile. **Always pass the expected response
+type** (this is the single most common mistake when migrating from `axios`/`fetch`):
+
+```ts
+const { data } = await http.get<User>('/users/1');     // data: User | null
+const { data: users } = await http.get<User[]>('/users'); // data: User[] | null
+const { data: user } = await http.post<User>('/users', { name: 'Alice' });
+```
+
+`HttpResult<T>` is a **discriminated union** — `{ data: T; error: null }` on
+success, `{ data: null; error: HttpError }` on failure. Narrow on `error` first
+so `data` becomes the non-null `T`:
+
+```ts
+const { data, error } = await http.get<User>('/users/1');
+if (error) return;            // data is null on this branch
+console.log(data.first_name); // data is User here — type-checks
+```
+
+Reach for the generic, not an `as User` cast or `any` — it types the result end
+to end (and flows through `all`/`race` and `Resource` too).
 
 ## Common patterns
 

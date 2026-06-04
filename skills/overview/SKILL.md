@@ -1,7 +1,7 @@
 ---
 name: mongez-http-overview
 description: |
-  @mongez/http setup and bootstrap — installing the package, configuring the global `Http` instance, `setCurrentHttp`/`getCurrentHttp`, and the exports table. No Axios. Single runtime dep (`@mongez/concat-route`).
+  @mongez/http setup and bootstrap — installing the package, configuring the global `Http` instance, `setCurrentHttp`/`getCurrentHttp`, and the exports table. Use this when **replacing axios/fetch** or making HTTP/API requests in a @mongez/warlock app. No Axios; single runtime dep (`@mongez/concat-route`). Remember to type responses with a generic (`http.get<User>()`) — see the `mongez-http-client` skill.
 ---
 
 # @mongez/http

@@ -4,6 +4,15 @@ All notable changes to `@mongez/http` are documented here. The format follows [K
 
 ---
 
+## [3.3.8] — 2026-06-04
+
+### Changed
+
+- **Skills now state the response-typing rule explicitly.** The `http-client` skill gained a *"Type the response — always pass a generic"* section: every verb is `get<T = unknown>(…)`, so omitting the type leaves `data` as `unknown` and `data.first_name` won't compile — always call `http.get<User>(…)` and narrow on `error` first. Mirrored into `llms-full.txt`.
+- **Sharper skill triggers.** The `overview` and `http-client` skill descriptions now fire on *making HTTP/API requests*, *replacing axios/fetch*, and *typing a response*, so an agent loads them instead of reverse-engineering usage from source. No code/API changes.
+
+---
+
 ## [3.3.7]
 
 ### Changed

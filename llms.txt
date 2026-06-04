@@ -44,9 +44,9 @@ const { data: users } = await usersResource.list({ page: 1 });
 ## Skills
 
 - [`skills/overview/SKILL.md`](skills/overview/SKILL.md) — Bootstrap, exports table, package setup
-  - *Auto-trigger:* Load when installing or configuring `@mongez/http` globally with `setCurrentHttp`/`getCurrentHttp`.
-- [`skills/http-client/SKILL.md`](skills/http-client/SKILL.md) — Http class, request methods, HttpConfig, RequestOptions, cancellation, React patterns
-  - *Auto-trigger:* Load when calling `http.get/post/put/patch/delete/all/race`, `new Http(...)`, or configuring auth, timeout, putToPost, serializer, fetchCache, dedupeKey.
+  - *Auto-trigger:* Load when installing or configuring `@mongez/http` globally with `setCurrentHttp`/`getCurrentHttp`, or when **replacing axios/fetch** in a @mongez/warlock app.
+- [`skills/http-client/SKILL.md`](skills/http-client/SKILL.md) — Http class, request methods, response typing (generics), HttpConfig, RequestOptions, cancellation, React patterns
+  - *Auto-trigger:* Load when making HTTP/API requests, **replacing axios/fetch**, calling `http.get/post/put/patch/delete/all/race`, `new Http(...)`, **typing a response** (`http.get<User>()` — default is `unknown`), or configuring auth, timeout, putToPost, serializer, fetchCache, dedupeKey.
 - [`skills/error-handling/SKILL.md`](skills/error-handling/SKILL.md) — HttpError, HttpResult, status predicates, validation errors
   - *Auto-trigger:* Load when handling `HttpError`, checking `isNotFound`/`isUnauthorized`/`isValidationError`, or narrowing `HttpResult<T>`.
 - [`skills/streaming/SKILL.md`](skills/streaming/SKILL.md) — stream(), responseType "stream", onDownloadProgress, SSE/NDJSON

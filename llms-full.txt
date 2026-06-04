@@ -107,6 +107,20 @@ type HttpResult<T> =
   | { data: null; error: HttpError;  status: number | null; response: Response | null; headers: Record<string, string> | null; request: OutgoingRequest }
 ```
 
+**Always pass the response type as a generic.** Every verb is `get<T = unknown>(…)`,
+so omitting `T` makes `data` `unknown` and `data.first_name` won't type-check
+(the #1 mistake when migrating from axios/fetch). Pass it explicitly and narrow on
+`error` first (the union flips `data` to non-null `T` on the success branch):
+
+```ts
+const { data, error } = await http.get<User>('/users/1');  // data: User | null
+if (error) return;                                          // data is null here
+console.log(data.first_name);                               // data: User — type-checks
+// arrays: http.get<User[]>('/users');  POST: http.post<User>('/users', body)
+```
+
+Use the generic, not an `as`/`any` cast — it flows through `all`/`race`/`Resource` too.
+
 ---
 
 ## CancellablePromise<T>
