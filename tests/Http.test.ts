@@ -1168,6 +1168,204 @@ describe("Http", () => {
       // Default dedup key includes params, so these are treated as separate requests.
       expect(spy).toHaveBeenCalledTimes(2);
     });
+
+    it("per-request dedupeKey overrides the config generator", async () => {
+      const client = new Http({
+        baseURL: "https://api.example.com",
+        dedupeKey: (url) => url,
+      });
+      const spy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } }),
+      );
+
+      // Same URL — the config generator would collapse these into one fetch.
+      // Distinct explicit keys keep them apart, which is how a caller expresses
+      // "these are different users".
+      await Promise.all([
+        client.get("/me", { dedupeKey: "me:1" }),
+        client.get("/me", { dedupeKey: "me:2" }),
+      ]);
+
+      expect(spy).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // ── dedupe toggle ────────────────────────────────────────────────────────────
+
+  describe("dedupe toggle", () => {
+    it("deduplicates by default in a browser environment", async () => {
+      const spy = mockFetch({ ok: true });
+
+      await Promise.all([http.get("/users"), http.get("/users")]);
+
+      expect(spy).toHaveBeenCalledTimes(1);
+    });
+
+    it("config dedupe:false gives every caller its own fetch", async () => {
+      const client = new Http({ baseURL: "https://api.example.com", dedupe: false });
+      const spy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } }),
+      );
+
+      await Promise.all([client.get("/users"), client.get("/users")]);
+
+      expect(spy).toHaveBeenCalledTimes(2);
+    });
+
+    it("per-request dedupe:false overrides an enabled config", async () => {
+      const client = new Http({ baseURL: "https://api.example.com", dedupe: true });
+      const spy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } }),
+      );
+
+      await Promise.all([
+        client.get("/users"),
+        client.get("/users", { dedupe: false }),
+      ]);
+
+      expect(spy).toHaveBeenCalledTimes(2);
+    });
+
+    it("a non-deduplicated GET is still cancellable in flight", async () => {
+      const client = new Http({ baseURL: "https://api.example.com", dedupe: false });
+
+      // Resolves once fetch has actually been entered, so we cancel a genuinely
+      // in-flight request rather than tripping the already-aborted fast path.
+      let started!: () => void;
+      const inFlight = new Promise<void>((resolve) => { started = resolve; });
+
+      const spy = vi.spyOn(globalThis, "fetch").mockImplementation((_url, init) => {
+        started();
+        return new Promise((_resolve, reject) => {
+          (init as RequestInit).signal?.addEventListener("abort", () =>
+            reject(new DOMException("Aborted", "AbortError")),
+          );
+        });
+      });
+
+      const req = client.get("/slow");
+      await inFlight;
+      req.cancel();
+      const { error } = await req;
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(error!.isAborted).toBe(true);
+    });
+  });
+
+  // ── fetchInit passthrough ────────────────────────────────────────────────────
+
+  describe("fetchInit", () => {
+    /** Grab the RequestInit the library handed to fetch. */
+    function initOf(spy: ReturnType<typeof mockFetch>): Record<string, unknown> {
+      return spy.mock.calls[0]![1] as unknown as Record<string, unknown>;
+    }
+
+    it("forwards unknown config keys verbatim (Next.js next: { revalidate, tags })", async () => {
+      const client = new Http({
+        baseURL: "https://api.example.com",
+        fetchInit: { next: { revalidate: 60, tags: ["news"] } },
+      });
+      const spy = mockFetch({});
+
+      await client.get("/news");
+
+      expect(initOf(spy)["next"]).toEqual({ revalidate: 60, tags: ["news"] });
+    });
+
+    it("forwards per-request keys and merges them over the config ones", async () => {
+      const client = new Http({
+        baseURL: "https://api.example.com",
+        fetchInit: { next: { revalidate: 60 }, priority: "low" },
+      });
+      const spy = mockFetch({});
+
+      await client.get("/news", { fetchInit: { next: { tags: ["news"] } } });
+
+      const init = initOf(spy);
+      // Per-request wins on conflict; non-conflicting config keys survive.
+      expect(init["next"]).toEqual({ tags: ["news"] });
+      expect(init["priority"]).toBe("low");
+    });
+
+    it("cannot override the library-controlled method, headers, body or signal", async () => {
+      const spy = mockFetch({});
+      const foreignSignal = new AbortController().signal;
+
+      await http.post(
+        "/users",
+        { name: "Ada" },
+        {
+          fetchInit: {
+            method: "DELETE",
+            headers: { "X-Evil": "1" },
+            body: "hijacked",
+            signal: foreignSignal,
+          },
+        },
+      );
+
+      const init = initOf(spy);
+      expect(init["method"]).toBe("POST");
+      expect(init["body"]).toBe(JSON.stringify({ name: "Ada" }));
+      expect(init["signal"]).not.toBe(foreignSignal);
+      expect((init["headers"] as Record<string, string>)["X-Evil"]).toBeUndefined();
+    });
+
+    it("a configured credentials value wins over fetchInit", async () => {
+      const client = new Http({ baseURL: "https://api.example.com", credentials: "include" });
+      const spy = mockFetch({});
+
+      await client.get("/users", { fetchInit: { credentials: "omit" } });
+
+      expect(initOf(spy)["credentials"]).toBe("include");
+    });
+
+    it("an unset option does not erase a fetchInit value", async () => {
+      const spy = mockFetch({});
+
+      // The library has no opinion on `cache` here (no fetchCache configured),
+      // so spreading library fields last must not write undefined over this.
+      await http.get("/users", { fetchInit: { cache: "force-cache" } });
+
+      expect(initOf(spy)["cache"]).toBe("force-cache");
+    });
+
+    it("keeps forwarding on the streaming path", async () => {
+      const client = new Http({
+        baseURL: "https://api.example.com",
+        fetchInit: { next: { tags: ["feed"] } },
+      });
+      const spy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response("data: {\"n\":1}\n\n", {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        }),
+      );
+
+      const stream = client.stream("/feed");
+      for await (const _chunk of stream) { /* drain */ }
+
+      const init = spy.mock.calls[0]![1] as unknown as Record<string, unknown>;
+      expect(init["next"]).toEqual({ tags: ["feed"] });
+    });
+
+    it("never applies keepalive to a stream", async () => {
+      const client = new Http({ baseURL: "https://api.example.com", keepalive: true });
+      const spy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response("data: {\"n\":1}\n\n", {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        }),
+      );
+
+      const stream = client.stream("/feed");
+      for await (const _chunk of stream) { /* drain */ }
+
+      // keepalive caps the body at 64 KB — it must never reach a long-lived stream.
+      const init = spy.mock.calls[0]![1] as unknown as Record<string, unknown>;
+      expect(init["keepalive"]).toBeUndefined();
+    });
   });
 
   // ── before interceptor options argument (item 15) ────────────────────────────

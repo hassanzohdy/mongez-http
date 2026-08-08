@@ -1,7 +1,7 @@
 ---
 name: mongez-http-recipes
 description: |
-  Idiomatic composition recipes for `@mongez/http` — auth interceptor with token refresh on 401 via `replay()`, built-in retry with exponential backoff and jitter, cancel-on-unmount in React via `.cancel()`, multipart file upload with abort, typed CRUD via a `Resource` subclass, deduping identical concurrent requests with `dedupeKey`, and response caching by URL.
+  Idiomatic composition recipes for `@mongez/http` — auth interceptor with token refresh on 401 via `replay()`, built-in retry with exponential backoff and jitter, cancel-on-unmount in React via `.cancel()`, multipart file upload with abort, typed CRUD via a `Resource` subclass, deduping identical concurrent requests with `dedupeKey`, response caching by URL, and forwarding Next.js `next: { revalidate, tags }` through `fetchInit` so `revalidateTag` works.
 ---
 
 # Recipes
@@ -145,7 +145,12 @@ One file declares the resource; the call sites stay free of URL-string sprawl. S
 
 ## Dedupe identical concurrent requests
 
-Two components mount in the same tick and both ask for `/products/42`. By default, concurrent `GET` calls to the same URL + serialised params already share one underlying `fetch` — each caller still gets its own `CancellablePromise`, and the shared request only aborts when every caller has cancelled.
+Two components mount in the same tick and both ask for `/products/42`. **In a browser**, concurrent `GET` calls to the same URL + serialised params already share one underlying `fetch` — each caller still gets its own `CancellablePromise`, and the shared request only aborts when every caller has cancelled.
+
+> ⚠️ **Browser only.** Deduplication is off by default outside a browser, because the key
+> is URL + params and cannot tell two *users* apart — on a server that would hand one
+> user's response to another. Opting in server-side requires a per-request `dedupeKey`
+> string carrying identity. See the `mongez-http-server-side` skill.
 
 Need to tweak how the dedup key is computed (e.g. ignore params, or coalesce paginated calls)? Set `dedupeKey` on the `Http` config — a function `(url, params) => string`.
 
@@ -163,6 +168,35 @@ const aggressive = new Http({
 ```
 
 Useful in React trees where multiple components legitimately need the same data on first render. The dedup window is the lifetime of the in-flight request — once it resolves, the cache layer (configured separately) takes over for subsequent calls.
+
+Turn it off entirely with `dedupe: false` (on the config or a single request); on a server it is already off.
+
+## Next.js App Router — tag responses so `revalidateTag` works
+
+Next reads non-standard keys off the `fetch` init to drive its data cache. Forward them with `fetchInit` — otherwise tags never attach, and `revalidateTag()` after a mutation silently invalidates nothing. It looks correct in development (where caching is largely disabled) and fails in production.
+
+```ts
+import { revalidateTag } from "next/cache";
+import { Http } from "@mongez/http";
+
+const http = new Http({
+  baseURL: process.env.API_URL!,
+  fetchInit: { next: { revalidate: 60 } },     // instance-wide default
+});
+
+// Server component — tag this response
+const { data: posts } = await http.get<Post[]>("/posts", {
+  fetchInit: { next: { tags: ["posts"] } },
+});
+
+// Server action — after the mutation, drop everything tagged "posts"
+export async function createPost(input: PostInput) {
+  await http.post("/posts", input);
+  revalidateTag("posts");
+}
+```
+
+`fetchInit` is framework-neutral — it forwards any key the library doesn't model, including Deno/Bun/Cloudflare-specific ones. It cannot override `method`, `headers`, `body` or `signal`.
 
 ## Response cache by URL with a custom TTL
 

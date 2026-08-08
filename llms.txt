@@ -1,6 +1,6 @@
 # @mongez/http
 
-> Robust native-fetch HTTP client for TypeScript. Returns `{data, error}` discriminated unions. Per-request `.cancel()`. Typed errors. Caching, retry, interceptors. `Resource` class for RESTful CRUD.
+> Robust native-fetch HTTP client for TypeScript. Returns `{data, error}` discriminated unions. Per-request `.cancel()`. Typed errors. Caching, retry, interceptors. `Resource` class for RESTful CRUD. SSR-safe by default, with `fetchInit` for Next.js `next: { revalidate, tags }`.
 
 ## Install
 
@@ -35,8 +35,8 @@ const { data: users } = await usersResource.list({ page: 1 });
 - `CancellablePromise<T>` — `Promise<T> & { cancel(reason?): void; signal: AbortSignal }`
 - `CancellableAsyncIterable<T>` — returned by `stream()`; has `.cancel()` and `.error`
 - `HttpError` — status, body, isAborted, isTimeout, isNetwork, isNotFound, isValidationError, …
-- `HttpConfig` — baseURL, auth, timeout, headers, cache, retry, putToPost, publishKey, serializer, fetchCache, dedupeKey
-- `RequestOptions` — params, headers, signal, cache, cacheKey, retry, throw, timeout, data, responseType, fetchCache, onDownloadProgress
+- `HttpConfig` — baseURL, auth, timeout, headers, cache, retry, putToPost, publishKey, serializer, fetchCache, fetchInit, dedupe, dedupeKey
+- `RequestOptions` — params, headers, signal, cache, cacheKey, dedupe, dedupeKey, retry, throw, timeout, data, responseType, fetchCache, fetchInit, onDownloadProgress
 - `StreamRequestOptions` — method, data, format (sse/ndjson), parseLine, reconnect, reconnectDelay
 - `CacheDriver` — get / set / remove / clear interface
 - `ResourceService` — list / get / create / update / patch / delete / bulkDelete / publish
@@ -57,6 +57,12 @@ const { data: users } = await usersResource.list({ page: 1 });
   - *Auto-trigger:* Load when caching GET responses with a `CacheDriver`, setting `cacheKey`, or calling `invalidate`/`invalidateAll`.
 - [`skills/resource/SKILL.md`](skills/resource/SKILL.md) — Resource class, CRUD, publish, action, pagination subclass
   - *Auto-trigger:* Load when writing `class XResource extends Resource`, using CRUD methods, or building paginated/nested resources.
+- [`skills/server-side/SKILL.md`](skills/server-side/SKILL.md) — SSR/Next.js safety: dedupe + cache defaults off the browser, identity-aware keys, `fetchInit`, `revalidateTag`, `setCurrentHttp` caveat
+  - *Auto-trigger:* Load when using the package on a **server** — Next.js App Router / server components / SSR, Node services, workers, multi-tenant processes — or when setting `dedupe`/`dedupeKey`/`fetchInit`, forwarding `next: { revalidate, tags }`, or wiring `revalidateTag`.
+- [`skills/recipes/SKILL.md`](skills/recipes/SKILL.md) — cross-feature compositions: token refresh via `replay()`, retry with jitter, cancel-on-unmount, uploads, typed CRUD, dedupe, Next.js tags
+  - *Auto-trigger:* Load when composing several features together — auth refresh on 401, React cancel-on-unmount, multipart upload with abort, or Next.js cache tagging.
+- [`skills/changelog/SKILL.md`](skills/changelog/SKILL.md) — dated release history, newest first
+  - *Auto-trigger:* Load when asked what changed in a version, when a feature landed, or before bumping/releasing the package.
 
 ## Files
 

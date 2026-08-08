@@ -174,9 +174,31 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * True when running in a browser-like environment (one user per instance).
+ *
+ * Both GET deduplication and the response cache derive their default key from URL +
+ * params, which cannot distinguish one caller from another. That is harmless in a browser
+ * and a cross-user data leak on a server, so both consult this check before applying it.
+ */
+function isBrowser(): boolean {
+  return typeof window !== "undefined";
+}
+
 function buildCacheKey(url: string, params?: HttpParams): string {
   const qs = params ? JSON.stringify(params) : "";
   return `http:${url}${qs ? `:${qs}` : ""}`;
+}
+
+/**
+ * Assign `value` onto `init[key]` only when the library actually has an opinion.
+ *
+ * The library-controlled fields are written *after* the caller's `fetchInit` so they
+ * cannot be overridden — but writing `undefined` over a value the caller deliberately
+ * put in `fetchInit` would erase it, defeating the escape hatch. Unset stays unset.
+ */
+function assignIfDefined(init: Record<string, unknown>, key: string, value: unknown): void {
+  if (value !== undefined) init[key] = value;
 }
 
 // ─── Internal context for replay support ─────────────────────────────────────
@@ -292,8 +314,9 @@ export class Http {
    * Send a request with any HTTP method — the escape hatch for non-standard verbs.
    * All convenience methods delegate here.
    *
-   * GET requests are automatically deduplicated: concurrent calls with the same URL
-   * share a single underlying fetch. Each caller gets its own CancellablePromise.
+   * GET requests are deduplicated **in the browser**: concurrent calls with the same URL
+   * share a single underlying fetch, and each caller gets its own CancellablePromise.
+   * Outside a browser deduplication is off by default — see `HttpConfig.dedupe`.
    */
   request<T = unknown>(
     method: HttpMethod | string,
@@ -301,15 +324,13 @@ export class Http {
     data?: HttpData,
     options: RequestOptions = {},
   ): CancellablePromise<HttpResult<T>> {
-    if (method === "GET") {
+    if (method === "GET" && this.shouldDedupe(options)) {
       // Merge default params for dedup key so it matches what buildOutgoingRequest produces.
       const mergedParams = this.config.params
         ? { ...this.config.params, ...options.params }
         : options.params;
       const rawUrl = joinUrl(this.config.baseURL ?? "", path);
-      const dedupeKey = this.config.dedupeKey
-        ? this.config.dedupeKey(rawUrl, mergedParams)
-        : appendParams(rawUrl, mergedParams);
+      const dedupeKey = this.resolveDedupeKey(rawUrl, mergedParams, options);
 
       if (!this.inFlight.has(dedupeKey)) {
         const sharedController = new AbortController();
@@ -525,16 +546,10 @@ export class Http {
         // ── Fetch ──────────────────────────────────────────────────────────────
         let response: Response;
         try {
-          response = await fetch(req.url, {
-            method: req.method,
-            headers: req.headers,
-            body: req.body,
-            signal: controller.signal,
-            credentials: options.credentials ?? self.config.credentials,
-            mode: options.mode ?? self.config.mode,
-            redirect: options.redirect ?? self.config.redirect,
-            cache: options.fetchCache ?? self.config.fetchCache,
-          });
+          response = await fetch(
+            req.url,
+            self.buildFetchInit(req, req.body, controller.signal, options, {}, false),
+          );
         } catch {
           if (controller.signal.aborted) return; // cancelled — end silently
 
@@ -792,10 +807,11 @@ export class Http {
     let cacheKey: string | undefined;
 
     if (actualMethod === "GET" && cacheConfig) {
-      cacheKey = options.cacheKey ??
-        (cacheConfig.generateKey
+      cacheKey = options.cacheKey ?? (
+        cacheConfig.generateKey
           ? cacheConfig.generateKey(req.url, options.params)
-          : buildCacheKey(req.url, options.params));
+          : this.defaultCacheKey(req.url, options.params)
+      );
 
       const cached = await cacheConfig.driver.get<T>(cacheKey);
       if (cached !== null && cached !== undefined) {
@@ -917,18 +933,10 @@ export class Http {
 
     let response: Response;
     try {
-      response = await fetch(req.url, {
-        method: req.method,
-        headers: req.headers,
-        body: fetchBody,
-        signal: effectiveSignal,
-        credentials: options.credentials ?? this.config.credentials,
-        mode: options.mode ?? this.config.mode,
-        keepalive: options.keepalive ?? this.config.keepalive,
-        redirect: options.redirect ?? this.config.redirect,
-        cache: options.fetchCache ?? this.config.fetchCache,
-        ...extraInit,
-      } as RequestInit);
+      response = await fetch(
+        req.url,
+        this.buildFetchInit(req, fetchBody, effectiveSignal, options, extraInit),
+      );
     } catch (err) {
       clearTimeout(timeoutId);
 
@@ -1086,6 +1094,116 @@ export class Http {
     if (err.status === null) return false;
     const retryOn = config.retryOn ?? DEFAULT_RETRY_ON;
     return retryOn.includes(err.status);
+  }
+
+  /**
+   * Whether this GET should join the in-flight dedup pool.
+   *
+   * Per-request wins over instance config, which wins over the environment default:
+   * on in a browser (one user per instance), off everywhere else.
+   */
+  private shouldDedupe(options: RequestOptions): boolean {
+    return options.dedupe ?? this.config.dedupe ?? isBrowser();
+  }
+
+  /**
+   * Resolve the key that decides which concurrent GETs share one underlying fetch.
+   *
+   * Precedence: explicit per-request key → `config.dedupeKey(url, params)` → URL + params.
+   *
+   * The last two are derived from URL + params only — they never see headers, cookies or
+   * auth, so they cannot tell two *users* apart. That is fine in a browser and unsafe on a
+   * server, so outside a browser an explicit per-request key is mandatory. We refuse rather
+   * than guess which header carries identity: a guess would miss custom schemes (a tenant
+   * header, a signed cookie) while looking safe, which is worse than failing loudly.
+   */
+  private resolveDedupeKey(
+    rawUrl: string,
+    mergedParams: HttpParams | undefined,
+    options: RequestOptions,
+  ): string {
+    if (options.dedupeKey) return options.dedupeKey;
+
+    if (!isBrowser()) {
+      throw new Error(
+        "@mongez/http: GET deduplication is enabled outside a browser, which would let " +
+          "concurrent requests with different credentials share one response. Pass an " +
+          'identity-aware key — http.get(path, { dedupeKey: `me:${userId}` }) — or disable ' +
+          "deduplication with { dedupe: false } on the request or the Http config.",
+      );
+    }
+
+    return this.config.dedupeKey
+      ? this.config.dedupeKey(rawUrl, mergedParams)
+      : appendParams(rawUrl, mergedParams);
+  }
+
+  /**
+   * Build the `RequestInit` for a fetch call.
+   *
+   * Caller-supplied `fetchInit` is spread FIRST so that keys the library doesn't model —
+   * Next.js' `next: { revalidate, tags }`, runtime-specific flags — reach fetch, while the
+   * fields the library manages are written last and win. `method`/`headers`/`body`/`signal`
+   * always win (overriding them would bypass interceptors and auth, or break cancellation
+   * and timeouts); the optional ones win only when actually configured, so an unset option
+   * doesn't erase a deliberate `fetchInit` value.
+   *
+   * @param keepalive Whether `keepalive` participates at all. Streaming never applies it —
+   *                  it caps the body at 64 KB and exists for unload beacons, so a globally
+   *                  configured `keepalive: true` must not reach a long-lived stream.
+   */
+  private buildFetchInit(
+    req: OutgoingRequest,
+    body: BodyInit | undefined,
+    signal: AbortSignal,
+    options: RequestOptions,
+    extraInit: Record<string, unknown> = {},
+    keepalive = true,
+  ): RequestInit {
+    const init: Record<string, unknown> = {
+      ...this.config.fetchInit,
+      ...options.fetchInit,
+      ...extraInit,
+      method: req.method,
+      headers: req.headers,
+      body,
+      signal,
+    };
+
+    assignIfDefined(init, "credentials", options.credentials ?? this.config.credentials);
+    assignIfDefined(init, "mode", options.mode ?? this.config.mode);
+    assignIfDefined(init, "redirect", options.redirect ?? this.config.redirect);
+    assignIfDefined(init, "cache", options.fetchCache ?? this.config.fetchCache);
+
+    if (keepalive) {
+      assignIfDefined(init, "keepalive", options.keepalive ?? this.config.keepalive);
+    }
+
+    return init as RequestInit;
+  }
+
+  /**
+   * The fallback cache key, used only when neither `options.cacheKey` nor
+   * `cache.generateKey` was supplied.
+   *
+   * URL + params has the same blind spot as the default dedup key: it cannot tell two
+   * callers apart, so on a server an authenticated response could be handed to a different
+   * user. The cache is opt-in, so reaching here outside a browser means someone enabled it
+   * without saying how entries are scoped — refuse instead of caching per-user data under a
+   * shared key.
+   */
+  private defaultCacheKey(url: string, params?: HttpParams): string {
+    if (!isBrowser()) {
+      throw new Error(
+        "@mongez/http: response caching is enabled outside a browser without an " +
+          "identity-aware key, so one user's cached response could be served to another. " +
+          'Pass a per-request key — http.get(path, { cacheKey: `me:${userId}` }) — or a ' +
+          "cache.generateKey that includes the caller's identity. On a server, prefer the " +
+          "framework's own cache (Next.js: fetchInit: { next: { revalidate, tags } }).",
+      );
+    }
+
+    return buildCacheKey(url, params);
   }
 
   private resolveCacheConfig(options: RequestOptions): ResolvedCache | null {

@@ -1,12 +1,18 @@
 ---
 name: mongez-http-caching
 description: |
-  @mongez/http application-level caching — `CacheDriver` interface (get/set/remove/clear), `HttpCacheConfig` (driver, ttl, generateKey), global `cache` in `HttpConfig`, per-request `cache`/`cacheKey` override, `invalidate`/`invalidateAll`. GET requests only. Works with `@mongez/cache` drivers, in-memory `Map`, `localStorage`, etc.
+  @mongez/http application-level caching — `CacheDriver` interface (get/set/remove/clear), `HttpCacheConfig` (driver, ttl, generateKey), global `cache` in `HttpConfig`, per-request `cache`/`cacheKey` override, `invalidate`/`invalidateAll`. GET requests only, opt-in, and **client-side by design** — on a server it requires an identity-aware key. Works with `@mongez/cache` drivers, in-memory `Map`, `localStorage`, etc.
 ---
 
 # Caching
 
-Caching applies to **GET requests only**. Any `CacheDriver`-compatible store works — including `@mongez/cache` drivers.
+Caching applies to **GET requests only**, and is **opt-in** — with no `driver` configured it never runs. Any `CacheDriver`-compatible store works — including `@mongez/cache` drivers.
+
+> ⚠️ **This cache is a client-side feature.** Its default key is URL + params, which cannot
+> tell two callers apart — fine in a browser (one user per instance), unsafe on a server
+> where a cached authenticated response could be served to a different user. Outside a
+> browser an enabled cache therefore **requires** an identity-aware key (`cacheKey` or
+> `generateKey`) and throws without one. See the `mongez-http-server-side` skill.
 
 ## CacheDriver interface
 
@@ -52,6 +58,9 @@ const { data } = await http.get('/users', {
 
 // Explicit cache key
 const { data } = await http.get('/users', { cacheKey: 'all-users' });
+
+// Server-side: the key must identify the caller, or the request throws
+const { data } = await http.get('/me', { cacheKey: `me:${session.userId}` });
 ```
 
 ## Example: in-memory driver

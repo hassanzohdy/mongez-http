@@ -33,7 +33,22 @@ export interface HttpCacheConfig {
   driver: CacheDriver;
   /** Time-to-live in seconds. Default: 300 (5 min). */
   ttl?: number;
-  /** Custom key generator. Default: baseURL + path + serialised params. */
+  /**
+   * Custom key generator. Default: baseURL + path + serialised params.
+   *
+   * **Server-side:** the default key is URL + params only, so it does not distinguish
+   * one caller from another. Outside a browser the cache therefore refuses to run
+   * unless you supply either this generator or a per-request `cacheKey` — see
+   * {@link HttpConfig.cache}. Close over the identity that matters in your app:
+   *
+   * @example
+   * // Request-scoped instance — the user id is baked into every key.
+   * const http = new Http({
+   *   baseURL,
+   *   cache: { driver, generateKey: (url, params) =>
+   *     `u:${session.userId}:${url}:${JSON.stringify(params ?? {})}` },
+   * });
+   */
   generateKey?: (url: string, params?: HttpParams) => string;
 }
 
@@ -246,7 +261,21 @@ export interface HttpConfig {
    */
   redirect?: RequestRedirect;
 
-  /** Enable/configure response caching for GET requests. */
+  /**
+   * Enable/configure response caching for GET requests.
+   *
+   * Opt-in: with no `driver` configured the cache never runs at all.
+   *
+   * > ⚠️ **The built-in cache is a client-side feature.** Its default key is URL + params,
+   * > which does not distinguish one caller from another — fine in a browser (one user per
+   * > instance), unsafe on a server where a cached authenticated response could be served
+   * > to a different user. Outside a browser an enabled cache therefore **requires** an
+   * > identity-aware key: either `cache.generateKey` or a per-request `cacheKey`. Without
+   * > one, the request throws rather than silently sharing data.
+   * >
+   * > On a server, prefer the framework's own cache (Next.js' data cache via
+   * > `fetchInit: { next: { revalidate, tags } }`) or a store keyed per request.
+   */
   cache?: boolean | HttpCacheConfig;
 
   /** Retry failed requests. */
@@ -297,12 +326,40 @@ export interface HttpConfig {
   fetchCache?: RequestCache;
 
   /**
+   * Share a single underlying fetch between concurrent GET requests that resolve
+   * to the same key.
+   *
+   * **Default: `true` in a browser, `false` everywhere else** (detected via
+   * `typeof window === "undefined"`).
+   *
+   * Deduplication is a single-user optimisation. The key is derived from URL + params
+   * and cannot include credentials, so on a server — SSR, a Node service, a worker,
+   * anything multi-tenant — two concurrent `GET /me` calls carrying *different* bearer
+   * tokens would otherwise share one fetch and both callers would receive the first
+   * caller's response. The default is therefore off outside the browser.
+   *
+   * Setting this to `true` outside a browser is allowed but each deduplicated GET must
+   * then carry an explicit `dedupeKey` **string** in its request options — you supply
+   * the identity, because the library cannot know which header carries it in your app.
+   * A GET without one throws instead of silently sharing.
+   *
+   * @example
+   * const http = new Http({ baseURL, dedupe: false }); // disable wholesale
+   */
+  dedupe?: boolean;
+
+  /**
    * Custom deduplication key generator for concurrent GET requests.
    *
    * By default the dedup key is the full URL with all query params appended,
    * so two calls with different `params` use different in-flight slots.
    * Override to share a single underlying fetch across calls that differ
    * only in params, or implement any other custom keying strategy.
+   *
+   * > ⚠️ This receives **only** the URL and params — never headers, cookies or request
+   * > options — so it cannot express "same URL, different user". It is a browser-side
+   * > tuning knob, not a way to make deduplication safe on a server. For that, pass a
+   * > per-request `dedupeKey` string instead.
    *
    * @param url   The fully-resolved URL (baseURL + path, no query string).
    * @param params The merged params object (global defaults + per-request).
@@ -312,6 +369,27 @@ export interface HttpConfig {
    * const http = new Http({ baseURL, dedupeKey: (url) => url });
    */
   dedupeKey?: (url: string, params?: HttpParams) => string;
+
+  /**
+   * Extra `RequestInit` fields forwarded verbatim to every underlying `fetch()` call.
+   *
+   * The library builds its init object from a fixed set of keys, so runtime- or
+   * framework-specific ones it doesn't know about would otherwise be dropped. Use this
+   * for Next.js' `next: { revalidate, tags }`, Deno/Bun/Cloudflare-specific keys, or
+   * anything else the built-in set doesn't cover. Per-request `fetchInit` is merged on
+   * top of this one (per-request wins on conflict).
+   *
+   * **Fields the library manages always win** — `method`, `headers`, `body` and `signal`
+   * can never be overridden from here (that would bypass interceptors and auth, or break
+   * cancellation and timeouts), and `credentials` / `mode` / `keepalive` / `redirect` /
+   * `fetchCache` win whenever they are actually configured. Anything the library has no
+   * opinion on passes straight through.
+   *
+   * @example
+   * // Next.js App Router — tag every response so revalidateTag() can invalidate it.
+   * const http = new Http({ baseURL, fetchInit: { next: { revalidate: 60, tags: ['news'] } } });
+   */
+  fetchInit?: RequestInit & Record<string, unknown>;
 }
 
 // ─── Response type ───────────────────────────────────────────────────────────
@@ -451,8 +529,40 @@ export interface RequestOptions {
   /** Override global cache setting for this request. */
   cache?: boolean | Omit<HttpCacheConfig, "driver"> & { driver?: CacheDriver };
 
-  /** Explicit cache key override. */
+  /**
+   * Explicit cache key override.
+   *
+   * Outside a browser this (or `cache.generateKey`) is **required** whenever the cache is
+   * enabled — the default URL + params key cannot tell two callers apart. Build it from
+   * whatever identifies the caller in your app:
+   *
+   * @example
+   * await http.get('/me', { cacheKey: `me:${session.userId}` });
+   */
   cacheKey?: string;
+
+  /**
+   * Override the global `dedupe` setting for this single request.
+   * See `HttpConfig.dedupe` for full documentation.
+   */
+  dedupe?: boolean;
+
+  /**
+   * Explicit deduplication key for this GET request.
+   *
+   * Concurrent GETs that resolve to the same key share one underlying fetch, so this key
+   * must capture **everything that makes two callers different** — most importantly their
+   * identity. The library deliberately does not guess: it cannot know whether identity
+   * lives in `Authorization`, a session cookie, an `X-Tenant-Id` header or somewhere else
+   * in your app, and a wrong guess would look safe while leaking.
+   *
+   * Required for every deduplicated GET when `dedupe` is enabled outside a browser.
+   * Takes precedence over `HttpConfig.dedupeKey`.
+   *
+   * @example
+   * await http.get('/me', { dedupeKey: `me:${session.userId}` });
+   */
+  dedupeKey?: string;
 
   /** Override global retry setting for this request. */
   retry?: boolean | Partial<HttpRetryConfig>;
@@ -526,4 +636,15 @@ export interface RequestOptions {
    * See `HttpConfig.fetchCache` for full documentation.
    */
   fetchCache?: RequestCache;
+
+  /**
+   * Extra `RequestInit` fields forwarded verbatim to this request's `fetch()` call,
+   * merged on top of `HttpConfig.fetchInit`.
+   * See `HttpConfig.fetchInit` for full documentation and the override rules.
+   *
+   * @example
+   * // Next.js App Router — tag this response so revalidateTag('news') invalidates it.
+   * await http.get('/news', { fetchInit: { next: { tags: ['news'] } } });
+   */
+  fetchInit?: RequestInit & Record<string, unknown>;
 }

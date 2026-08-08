@@ -1,7 +1,7 @@
 ---
 name: mongez-http-overview
 description: |
-  @mongez/http setup and bootstrap — installing the package, configuring the global `Http` instance, `setCurrentHttp`/`getCurrentHttp`, and the exports table. Use this when **replacing axios/fetch** or making HTTP/API requests in a @mongez/warlock app. No Axios; single runtime dep (`@mongez/concat-route`). Remember to type responses with a generic (`http.get<User>()`) — see the `mongez-http-client` skill.
+  @mongez/http setup and bootstrap — installing the package, configuring the global `Http` instance, `setCurrentHttp`/`getCurrentHttp`, and the exports table. Use this when **replacing axios/fetch** or making HTTP/API requests in a @mongez/warlock app. No Axios; single runtime dep (`@mongez/concat-route`). Remember to type responses with a generic (`http.get<User>()`) — see the `mongez-http-client` skill. Bootstrapping on a server (Next.js, SSR, Node)? See the `mongez-http-server-side` skill.
 ---
 
 # @mongez/http
@@ -35,7 +35,7 @@ You can be making requests within ten seconds of `yarn add`ing it, because the p
 <div class="mongez-highlight" data-accent="fire">
   <svg class="mongez-highlight-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><polyline points="21 3 21 8 16 8"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><polyline points="3 21 3 16 8 16"/></svg>
   <h3>Smart GET deduplication + retry</h3>
-  <p>Two concurrent calls to the same URL share one underlying <code>fetch</code>. Retry with configurable backoff and optional jitter — opt in per request or per instance.</p>
+  <p>In the browser, two concurrent calls to the same URL share one underlying <code>fetch</code> — off by default on a server, where callers are different users. Retry with configurable backoff and optional jitter — opt in per request or per instance.</p>
 </div>
 
 <div class="mongez-highlight" data-accent="bolt">
@@ -114,6 +114,12 @@ Need a one-off variant? Don't `new Http()` again — `extend()` returns a fresh 
 const adminHttp = http.extend({ baseURL: "https://admin.api.com" });
 ```
 
+> ⚠️ **On a server** — Next.js server components, SSR, a Node service — `setCurrentHttp` is
+> module-level global state shared across concurrent requests, so don't call it per request
+> to attach a user's token. Build a request-scoped instance and pass it explicitly instead.
+> GET deduplication and the response cache also change behaviour off the browser.
+> See **[server-side](../server-side/)**.
+
 ## Where to go next
 
 - **[HTTP client](../http-client/)** — every request method, options, and config field
@@ -122,4 +128,5 @@ const adminHttp = http.extend({ baseURL: "https://admin.api.com" });
 - **[Caching](../caching/)** — GET cache configuration and drivers
 - **[Interceptors](../interceptors/)** — `before()` / `after()` and lifecycle events
 - **[Streaming](../streaming/)** — SSE, NDJSON, and raw streams
+- **[Server-side & Next.js](../server-side/)** — SSR safety, `fetchInit`, `revalidateTag`
 - **[Recipes](../recipes/)** — file uploads, React Query, multi-tenant clients

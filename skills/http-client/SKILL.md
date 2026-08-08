@@ -1,7 +1,7 @@
 ---
 name: mongez-http-client
 description: |
-  @mongez/http `Http` class — making HTTP/API requests and **replacing axios/fetch** with `get`, `post`, `put`, `patch`, `delete`, `head`, `options`, `request`, concurrent `all`/`race`, `invalidate`/`invalidateAll`, `extend`. Covers **typing responses with a generic** (`http.get<User>()` — the default is `unknown`, so `data.first_name` won't type-check without it) and narrowing the `{ data, error }` discriminated union. Per-request `.cancel()` and external `AbortSignal`. Full `HttpConfig` (`baseURL`, `auth`, `timeout`, `putToPost`, `serializer`, `fetchCache`, `dedupeKey`) and `RequestOptions` (`params`, `signal`, `responseType`, `data`, `throw`).
+  @mongez/http `Http` class — making HTTP/API requests and **replacing axios/fetch** with `get`, `post`, `put`, `patch`, `delete`, `head`, `options`, `request`, concurrent `all`/`race`, `invalidate`/`invalidateAll`, `extend`. Covers **typing responses with a generic** (`http.get<User>()` — the default is `unknown`, so `data.first_name` won't type-check without it) and narrowing the `{ data, error }` discriminated union. Per-request `.cancel()` and external `AbortSignal`. Full `HttpConfig` (`baseURL`, `auth`, `timeout`, `putToPost`, `serializer`, `fetchCache`, `fetchInit`, `dedupe`, `dedupeKey`) and `RequestOptions` (`params`, `signal`, `responseType`, `data`, `throw`, `dedupe`, `dedupeKey`, `fetchInit`). Running on a server (Next.js SSR, Node service, worker)? Read the `mongez-http-server-side` skill first — deduplication and caching behave differently off the browser.
 ---
 
 # Http class
@@ -106,8 +106,9 @@ class Http {
   /**
    * Escape hatch for any HTTP method, including non-standard verbs.
    * All convenience methods delegate here.
-   * GET requests are automatically deduplicated: concurrent calls with the same URL
+   * GET requests are deduplicated IN THE BROWSER: concurrent calls with the same URL
    * share one underlying fetch. Each caller gets its own CancellablePromise.
+   * Off by default on a server — see the mongez-http-server-side skill.
    */
   request<T>(method: HttpMethod | string, path: string, data?: HttpData, options?: RequestOptions): CancellablePromise<HttpResult<T>>
 
@@ -158,10 +159,18 @@ interface HttpConfig {
   redirect?: RequestRedirect         // "follow" | "error" | "manual"
   fetchCache?: RequestCache          // browser HTTP cache directive — distinct from `cache`
 
+  // Extra RequestInit keys forwarded verbatim to every fetch() — the escape hatch for
+  // anything the built-in list doesn't model (Next.js `next: {revalidate, tags}`, runtime
+  // flags). Library-managed fields still win. See the mongez-http-server-side skill.
+  fetchInit?: RequestInit & Record<string, unknown>
+
   // Custom body serializer (e.g. MessagePack/CBOR). FormData/Blob/string pass through.
   serializer?: (data: unknown) => { body: BodyInit; contentType: string }
 
+  // GET deduplication. Default: true in a browser, false everywhere else.
+  dedupe?: boolean
   // Custom GET deduplication key — default keys by URL + serialised params.
+  // Browser-only tuning: it never sees headers, so it can't tell two users apart.
   dedupeKey?: (url: string, params?: HttpParams) => string
 }
 ```
@@ -175,6 +184,8 @@ interface RequestOptions {
   signal?: AbortSignal                                    // external (React Query, useEffect)
   cache?: boolean | Omit<HttpCacheConfig,'driver'> & { driver?: CacheDriver }
   cacheKey?: string                                       // explicit cache key override
+  dedupe?: boolean                                        // override the dedupe default for this call
+  dedupeKey?: string                                      // explicit dedup key; required server-side
   retry?: boolean | Partial<HttpRetryConfig>
   throw?: boolean                                         // default false
   timeout?: number
@@ -189,6 +200,7 @@ interface RequestOptions {
   keepalive?: boolean
   redirect?: RequestRedirect
   fetchCache?: RequestCache
+  fetchInit?: RequestInit & Record<string, unknown>       // merged over HttpConfig.fetchInit
 }
 ```
 
