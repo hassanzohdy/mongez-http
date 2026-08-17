@@ -89,6 +89,43 @@ describe("Http", () => {
     });
   });
 
+  // ── Path traversal ──────────────────────────────────────────────────────────
+
+  describe("path traversal", () => {
+    it("throws instead of escaping a scoped baseURL's path prefix via '../..'", () => {
+      const scoped = new Http({ baseURL: "https://api.example.com/v1" });
+      const spy = vi.spyOn(globalThis, "fetch");
+      expect(() => scoped.get("/users/../../admin/secrets")).toThrow(/path traversal/i);
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it("throws when traversal targets a baseURL with a path prefix", () => {
+      const scoped = new Http({ baseURL: "https://api.example.com/v1" });
+      const spy = vi.spyOn(globalThis, "fetch");
+      expect(() => scoped.get("/users/../../../etc/passwd")).toThrow(/path traversal/i);
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it("allows a normal nested path under a scoped baseURL", async () => {
+      const scoped = new Http({ baseURL: "https://api.example.com/v1" });
+      const spy = mockFetch([]);
+      await scoped.get("/users/42");
+      expect(spy).toHaveBeenCalledWith(
+        "https://api.example.com/v1/users/42",
+        expect.anything(),
+      );
+    });
+
+    it("still resolves a harmless '..' that stays under baseURL", async () => {
+      const spy = mockFetch([]);
+      await http.get("/users/42/../43");
+      expect(spy).toHaveBeenCalledWith(
+        "https://api.example.com/users/43",
+        expect.anything(),
+      );
+    });
+  });
+
   // ── POST ─────────────────────────────────────────────────────────────────────
 
   describe("post()", () => {
@@ -796,6 +833,18 @@ describe("Http", () => {
       expect(error!.request).not.toBeNull();
       expect(error!.request!.url).toContain("/missing");
       expect(error!.request!.method).toBe("GET");
+    });
+
+    it("error.request redacts sensitive headers, error.rawRequest keeps them live", async () => {
+      const authed = new Http({
+        baseURL: "https://api.example.com",
+        headers: { Authorization: "Bearer secret-token", "X-Custom": "keep-me" },
+      });
+      mockFetch({ msg: "nope" }, 401);
+      const { error } = await authed.get("/missing");
+      expect(error!.request!.headers["Authorization"]).toBe("[redacted]");
+      expect(error!.request!.headers["X-Custom"]).toBe("keep-me");
+      expect(error!.rawRequest!.headers["Authorization"]).toBe("Bearer secret-token");
     });
   });
 

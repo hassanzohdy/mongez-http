@@ -198,7 +198,8 @@ class HttpError extends Error {
   body: unknown                // parsed response body
   response: Response | null
   headers: Record<string, string> | null
-  request: OutgoingRequest | null
+  request: OutgoingRequest | null      // sensitive headers redacted ("[redacted]")
+  rawRequest: OutgoingRequest | null   // original, unredacted headers — never log this
   isAborted: boolean
   isTimeout: boolean
   isNetwork: boolean
@@ -212,7 +213,7 @@ class HttpError extends Error {
   get isValidationError(): boolean // 422
   get isRateLimited(): boolean     // 429
 
-  toJSON(): Record<string, unknown>   // omits `request`
+  toJSON(): Record<string, unknown>   // omits `request` / `rawRequest`
 }
 ```
 

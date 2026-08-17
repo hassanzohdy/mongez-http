@@ -94,6 +94,14 @@ const adminHttp = new Http({ baseURL: 'https://admin.api.com', auth: adminToken 
 export const adminUsers = new UsersResource().useHttp(adminHttp);
 ```
 
+## Path containment
+
+`id` and action segments are interpolated into the resource route, so they are confined to
+the configured `baseURL`. A value that escapes it (`id = "../../admin/users"`) **throws**
+rather than being silently rewritten — ids from route params or API payloads can't repoint a
+request at a different endpoint. With no `baseURL` configured there is nothing to confine
+against, so unsafe URL schemes (`javascript:`, `data:`) are rejected instead.
+
 ## Nested resources
 
 ```ts

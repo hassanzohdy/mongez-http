@@ -88,6 +88,16 @@ describe("Resource", () => {
       await users.get(42);
       expect(spy.mock.calls[0]![0]).toBe("https://api.example.com/users/42");
     });
+
+    it("rejects an id that attempts to traverse above the baseURL's path prefix", () => {
+      const scopedHttp = new Http({ baseURL: "https://api.example.com/api" });
+      setCurrentHttp(scopedHttp);
+      const scopedUsers = new UsersResource();
+
+      const spy = vi.spyOn(globalThis, "fetch");
+      expect(() => scopedUsers.get("../../admin/secrets")).toThrow(/path traversal/i);
+      expect(spy).not.toHaveBeenCalled();
+    });
   });
 
   // ── create() ────────────────────────────────────────────────────────────────

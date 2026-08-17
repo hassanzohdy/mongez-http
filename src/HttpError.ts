@@ -1,4 +1,5 @@
 import type { OutgoingRequest } from "./Http.types";
+import { redactHeaders } from "./utils/redact";
 
 /**
  * Structured error thrown (or returned) by every Http method.
@@ -38,13 +39,20 @@ export class HttpError extends Error {
   public readonly headers: Record<string, string> | null;
 
   /**
-   * The outgoing request that triggered this error.
+   * The outgoing request that triggered this error, with sensitive headers
+   * (Authorization, Cookie, …) redacted — safe to log directly.
    * Useful in `throw: true` mode where you only have the HttpError (no HttpResult).
    *
-   * Note: the `headers` object on the request may contain sensitive values
-   * (Authorization, Cookie). Do not log this object without redacting first.
+   * Use `rawRequest` if you need the live, unredacted headers.
    */
   public readonly request: OutgoingRequest | null;
+
+  /**
+   * The outgoing request with its original, unredacted headers.
+   * May contain live `Authorization`/`Cookie` values — do not log this without
+   * redacting first.
+   */
+  public readonly rawRequest: OutgoingRequest | null;
 
   constructor(opts: {
     message: string;
@@ -66,7 +74,10 @@ export class HttpError extends Error {
     this.isTimeout = opts.isTimeout ?? false;
     this.isNetwork = opts.isNetwork ?? false;
     this.headers = opts.headers ?? null;
-    this.request = opts.request ?? null;
+    this.rawRequest = opts.request ?? null;
+    this.request = opts.request
+      ? { ...opts.request, headers: redactHeaders(opts.request.headers) }
+      : null;
 
     // Preserve prototype chain in transpiled ES5 environments.
     Object.setPrototypeOf(this, new.target.prototype);

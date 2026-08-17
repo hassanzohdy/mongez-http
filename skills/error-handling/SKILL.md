@@ -14,7 +14,8 @@ class HttpError extends Error {
   body: unknown                // parsed response body
   response: Response | null
   headers: Record<string, string> | null  // null when no response was received
-  request: OutgoingRequest | null         // the outgoing request that produced this error
+  request: OutgoingRequest | null         // the outgoing request, sensitive headers redacted
+  rawRequest: OutgoingRequest | null      // same request with original, unredacted headers
   isAborted: boolean
   isTimeout: boolean
   isNetwork: boolean
@@ -28,10 +29,15 @@ class HttpError extends Error {
   get isValidationError(): boolean // 422
   get isRateLimited(): boolean     // 429
 
-  // Omits `request` (may contain Authorization / Cookie headers).
+  // Omits `request` / `rawRequest` entirely.
   toJSON(): Record<string, unknown>
 }
 ```
+
+`error.request` returns a copy whose `Authorization`, `Cookie` and other sensitive header
+values are replaced with `"[redacted]"`, so logging or serializing the error can't leak a
+token. Use `error.rawRequest` only when you genuinely need the live credentials (retrying
+with the same auth, request signing) — never pass it to a logger.
 
 ## HttpResult<T>
 

@@ -21,6 +21,7 @@ import { HttpError } from "./HttpError";
 import { type CancellableAsyncIterable, type CancellablePromise, makeCancellable } from "./cancellable";
 import { appendParams } from "./utils/params";
 import { parseBody, prepareBody, readBodyWithProgress, wrapBodyWithProgress } from "./utils/body";
+import { redactHeaders } from "./utils/redact";
 
 // ─── Module-level helpers ─────────────────────────────────────────────────────
 
@@ -31,23 +32,12 @@ import { parseBody, prepareBody, readBodyWithProgress, wrapBodyWithProgress } fr
 const BLOCKED_SCHEMES = /^(?!https?:\/\/)[a-z][a-z0-9+\-.]*:/i;
 
 /**
- * Header names/values whose values are redacted before being placed in event payloads.
- * This prevents credentials from leaking to third-party event listeners / loggers.
- */
-const SENSITIVE_HEADER_NAMES = new Set([
-  "authorization",
-  "cookie",
-  "set-cookie",
-  "x-api-key",
-  "x-auth-token",
-  "x-csrf-token",
-]);
-
-/**
  * Join a base URL (may include protocol + host) with a path segment.
  * - Blocks non-http(s) schemes when base is empty (javascript:, data:, file:, …).
- * - Normalises the joined URL via `new URL()` to collapse any `..` path-traversal
- *   sequences before the string reaches fetch().
+ * - Normalises the joined URL via `new URL()`, then verifies the resolved URL is
+ *   still confined under `base` — `new URL()` *resolves* "../.." sequences rather
+ *   than rejecting them, so without this check a `path` such as
+ *   "../../admin/secrets" would successfully escape the configured baseURL prefix.
  */
 function joinUrl(base: string, path: string): string {
   if (!base) {
@@ -59,12 +49,28 @@ function joinUrl(base: string, path: string): string {
     return path;
   }
   const joined = base.replace(/\/$/, "") + "/" + path.replace(/^\//, "");
-  // Normalise through the URL parser so "../.." sequences are resolved before fetch sees them.
+  let joinedUrl: URL;
   try {
-    return new URL(joined).href;
+    joinedUrl = new URL(joined);
   } catch {
     return joined; // Non-absolute URL (e.g. relative path used in tests) — return as-is.
   }
+
+  let basePrefix: string;
+  try {
+    basePrefix = new URL(base).href.replace(/\/$/, "");
+  } catch {
+    return joinedUrl.href; // base itself isn't a parseable absolute URL — nothing to confine against.
+  }
+
+  // Refuse rather than silently resolve: the joined URL must stay under the base path.
+  if (joinedUrl.href !== basePrefix && !joinedUrl.href.startsWith(basePrefix + "/")) {
+    throw new Error(
+      `@mongez/http: Blocked path traversal — "${path.slice(0, 80)}" resolves outside the configured baseURL ("${base}")`,
+    );
+  }
+
+  return joinedUrl.href;
 }
 
 function headersToObject(headers: Headers): Record<string, string> {
@@ -94,11 +100,7 @@ function assertSafeHeaders(headers: Record<string, string>): void {
  * receive raw credentials.
  */
 function sanitiseRequestForEvent(req: OutgoingRequest): OutgoingRequest {
-  const safe: Record<string, string> = {};
-  for (const [k, v] of Object.entries(req.headers)) {
-    safe[k] = SENSITIVE_HEADER_NAMES.has(k.toLowerCase()) ? "[redacted]" : v;
-  }
-  return { ...req, headers: safe };
+  return { ...req, headers: redactHeaders(req.headers) };
 }
 
 /**
