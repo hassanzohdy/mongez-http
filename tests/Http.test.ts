@@ -381,13 +381,14 @@ describe("Http", () => {
         cache: { driver, ttl: 60 },
       });
 
-      mockFetch({ users: [1] });
+      // vi.spyOn on an already-spied fetch returns the same spy (Vitest >= 3), so count
+      // calls on this one: only the first GET may reach fetch.
+      const spy = mockFetch({ users: [1] });
       await client.get("/users");
 
       // Second call — fetch should NOT be called.
-      const spy = vi.spyOn(globalThis, "fetch");
       const { data } = await client.get("/users");
-      expect(spy).not.toHaveBeenCalled();
+      expect(spy).toHaveBeenCalledTimes(1);
       expect(data).toEqual({ users: [1] });
     });
 

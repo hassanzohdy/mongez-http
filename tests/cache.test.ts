@@ -44,13 +44,14 @@ describe("Http cache", () => {
     const driver = makeMemoryDriver();
     const http = new Http({ baseURL: "https://api.example.com", cache: { driver, ttl: 60 } });
 
-    mockFetch({ users: [1, 2] });
+    // vi.spyOn on an already-spied fetch returns the same spy (Vitest >= 3), so count
+    // calls on this one: only the first GET may reach fetch.
+    const spy = mockFetch({ users: [1, 2] });
     await http.get("/users");
 
-    const spy = vi.spyOn(globalThis, "fetch");
     const { data } = await http.get("/users");
 
-    expect(spy).not.toHaveBeenCalled();
+    expect(spy).toHaveBeenCalledTimes(1);
     expect(data).toEqual({ users: [1, 2] });
   });
 
