@@ -329,6 +329,34 @@ Module-level singleton — safe in a browser, shared across concurrent requests 
 Don't call it per request to attach a user's token; build a request-scoped `new Http({ auth })`
 and pass it explicitly (`new OrdersResource().useHttp(http)`).
 
+### SSRF: user-influenced URLs
+
+Without a `baseURL`, `Http` fetches any `http(s)` URL it is given, including
+`http://169.254.169.254/` (cloud metadata) and `http://localhost:6379/`. When a URL is influenced
+by a user (a webhook target, an "import from URL" field, a proxy endpoint), that is server-side
+request forgery (SSRF). On a server, set a `baseURL` (requests that resolve outside it are
+refused) or validate the host against an allowlist before calling. Redirects are followed by the
+runtime, so also keep the allowlist to hosts you trust not to redirect elsewhere.
+
+```ts
+// Fixed base: a user-supplied path can never leave it.
+const api = new Http({ baseURL: "https://api.example.com" });
+await api.get(userPath);            // "../../admin" is rejected; an absolute URL stays under the base
+
+// No baseURL: validate the host yourself before fetching.
+const ALLOWED_HOSTS = new Set(["api.example.com", "cdn.example.com"]);
+
+function assertAllowed(raw: string) {
+  const url = new URL(raw);         // throws on garbage
+  if (url.protocol !== "https:" || !ALLOWED_HOSTS.has(url.host)) { // `host` keeps a non-default port
+    throw new Error(`Blocked host: ${url.host}`);
+  }
+  return url.href;
+}
+
+await http.get(assertAllowed(userSuppliedUrl));
+```
+
 ---
 
 ## HttpRetryConfig
@@ -434,6 +462,9 @@ export { http };
 ---
 
 ## Changelog
+
+### 3.5.2 — 2026-11-16
+- **Docs:** SSRF guidance for server-side requests (see "SSRF: user-influenced URLs" under Server-side). No code change.
 
 ### 3.4.0 — 2026-08-08 (server-side safety; browser behaviour unchanged)
 - **Fixed:** GET deduplication could serve one user's response to another on a server — the

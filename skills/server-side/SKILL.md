@@ -189,3 +189,26 @@ If your server-side code relied on the old behaviour, the changes are:
 - **An enabled cache now throws on a server** unless you pass `cacheKey` or
   `cache.generateKey`. The error message names the fix.
 - Browser behaviour is **unchanged** — same defaults, same keys.
+
+## SSRF: user-influenced URLs
+
+Without a `baseURL`, `Http` fetches any `http(s)` URL it is given, including `http://169.254.169.254/` (cloud metadata) and `http://localhost:6379/`. When a URL is influenced by a user (a webhook target, an "import from URL" field, a proxy endpoint), that is server-side request forgery (SSRF). On a server, set a `baseURL` (requests that resolve outside it are refused) or validate the host against an allowlist before calling. Redirects are followed by the runtime, so also keep the allowlist to hosts you trust not to redirect elsewhere.
+
+```ts
+// Fixed base: a user-supplied path can never leave it.
+const api = new Http({ baseURL: "https://api.example.com" });
+await api.get(userPath);            // "../../admin" is rejected; an absolute URL stays under the base
+
+// No baseURL: validate the host yourself before fetching.
+const ALLOWED_HOSTS = new Set(["api.example.com", "cdn.example.com"]);
+
+function assertAllowed(raw: string) {
+  const url = new URL(raw);         // throws on garbage
+  if (url.protocol !== "https:" || !ALLOWED_HOSTS.has(url.host)) { // `host` keeps a non-default port
+    throw new Error(`Blocked host: ${url.host}`);
+  }
+  return url.href;
+}
+
+await http.get(assertAllowed(userSuppliedUrl));
+```

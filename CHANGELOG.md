@@ -4,6 +4,16 @@ All notable changes to `@mongez/http` are documented here. The format follows [K
 
 ---
 
+## [3.5.2] — 2026-11-16
+
+### Documentation
+
+- **Server-side requests and SSRF:** README and the server-side skill explain that without a `baseURL` any URL is fetched (`http://169.254.169.254/`, `http://localhost:6379/`), and show a `baseURL` or host-allowlist guard for user-influenced URLs.
+
+### Changed
+
+- Tests: the path-traversal tests no longer touch the network. A `Resource` id with `..` segments is collapsed by `@mongez/concat-route` and stays under the `baseURL`; a direct `Http` call that resolves above the `baseURL` is blocked before `fetch` and comes back as an error result. The guard itself was already correct.
+
 ## [3.5.0] - 2026-08-17
 
 Security release. Both items below are reachable in ordinary browser and server usage; the

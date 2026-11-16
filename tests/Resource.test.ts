@@ -89,13 +89,31 @@ describe("Resource", () => {
       expect(spy.mock.calls[0]![0]).toBe("https://api.example.com/users/42");
     });
 
-    it("rejects an id that attempts to traverse above the baseURL's path prefix", () => {
+    it("keeps an id with `..` segments under the baseURL's path prefix", async () => {
       const scopedHttp = new Http({ baseURL: "https://api.example.com/api" });
       setCurrentHttp(scopedHttp);
       const scopedUsers = new UsersResource();
 
+      // `concatRoute` collapses dot-segments and clamps them at the root, so the
+      // request can leave the resource's route but never the configured baseURL.
+      const spy = mockFetch({});
+      await scopedUsers.get("../../admin/secrets");
+
+      const [url] = spy.mock.calls[0]!;
+      expect(String(url).startsWith("https://api.example.com/api/")).toBe(true);
+      expect(String(url)).not.toContain("..");
+    });
+
+    it("blocks a path that resolves above the baseURL before any request is sent", async () => {
+      const scopedHttp = new Http({ baseURL: "https://api.example.com/api" });
       const spy = vi.spyOn(globalThis, "fetch");
-      expect(() => scopedUsers.get("../../admin/secrets")).toThrow(/path traversal/i);
+
+      // Http resolves failures into `{ data, error }` instead of rejecting.
+      const result: any = await (async () => scopedHttp.get("../../admin/secrets"))().catch(
+        (error: unknown) => ({ error }),
+      );
+
+      expect(String(result.error?.message ?? result.error)).toMatch(/path traversal/i);
       expect(spy).not.toHaveBeenCalled();
     });
   });
